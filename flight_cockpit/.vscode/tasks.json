@@ -1,0 +1,46 @@
+{
+    "version": "2.0.0", // 配置文件版本，固定为1.0.0
+    "tasks": [
+        {
+            "type": "shell",
+            "label": "build test",
+            "command": "gcc",
+            "args": [
+                "-g",
+                "${workspaceFolder}/src/test.c",
+                "-o",
+                "${workspaceFolder}/build/test.exe",
+                "-ID:\\MSYS2\\mingw64\\include",
+                "-LD:\\MSYS2\\mingw64\\lib",
+                "-lmingw32",
+                "-lSDL2main",
+                "-lSDL2",
+                "-lSDL2_gfx",
+                "-lSDL2_ttf",
+                "-lSDL2_image",
+                "-lws2_32"
+            ],
+            "group": {
+                "kind": "build",
+                "isDefault": false
+            },
+            "problemMatcher": [
+                "$gcc"
+            ],
+            "detail": "编译src/test.c，链接SDL2系列库生成test.exe"
+        },
+        {
+            "type": "shell",
+            "label": "run test",
+            "command": "${workspaceFolder}/build/test.exe",
+            "dependsOn": [
+                "build test"
+            ],
+            "group": {
+                "kind": "build",
+                "isDefault": false
+            },
+            "detail": "运行test程序"
+        }
+    ]
+}
