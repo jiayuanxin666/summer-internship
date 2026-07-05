@@ -1,46 +1,46 @@
 {
-    "version": "2.0.0", // 配置文件版本，固定为1.0.0
+    "version": "2.0.0",
     "tasks": [
         {
+            "label": "build PFD",
             "type": "shell",
-            "label": "build test",
-            "command": "gcc",
+            "command": "D:/MSYS2/mingw64/bin/gcc.exe",
             "args": [
+                "-DSDL_MAIN_HANDLED",
                 "-g",
-                "${workspaceFolder}/src/test.c",
+
+                "src/PFD/pfd_main.c",
+                "src/PFD/pfd_ui.c",
+                "src/PFD/pfd_data.c",
+                "src/PFD/pfd_instruments.c",
+
                 "-o",
-                "${workspaceFolder}/build/test.exe",
-                "-ID:\\MSYS2\\mingw64\\include",
-                "-LD:\\MSYS2\\mingw64\\lib",
-                "-lmingw32",
-                "-lSDL2main",
-                "-lSDL2",
+                "build/PFD.exe",
+
+                "-I",
+                "D:/MSYS2/mingw64/include",
+
+                "-L",
+                "D:/MSYS2/mingw64/lib",
+
                 "-lSDL2_gfx",
                 "-lSDL2_ttf",
                 "-lSDL2_image",
-                "-lws2_32"
+                "-lSDL2",
+                "-lws2_32",
+                "-lm"
             ],
-            "group": {
-                "kind": "build",
-                "isDefault": false
-            },
+            "group": "build",
             "problemMatcher": [
                 "$gcc"
-            ],
-            "detail": "编译src/test.c，链接SDL2系列库生成test.exe"
+            ]
         },
         {
+            "label": "run PFD",
             "type": "shell",
-            "label": "run test",
-            "command": "${workspaceFolder}/build/test.exe",
-            "dependsOn": [
-                "build test"
-            ],
-            "group": {
-                "kind": "build",
-                "isDefault": false
-            },
-            "detail": "运行test程序"
+            "command": "build/PFD.exe",
+            "dependsOn": "build PFD",
+            "group": "test"
         }
     ]
 }
