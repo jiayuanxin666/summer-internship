@@ -1,87 +1,157 @@
+#include <stdio.h>
 #include <SDL2/SDL.h>
+#include <SDL2/SDL_image.h>
+#include <SDL2/SDL2_gfxPrimitives.h>
 
-// 简易画圆函数
-void drawCircle(SDL_Renderer* renderer, int x, int y, int radius) {
-    for (int w = 0; w < radius * 2; w++) {
-        for (int h = 0; h < radius * 2; h++) {
-            int dx = radius - w; // 横轴距离圆心的距离
-            int dy = radius - h; // 纵轴距离圆心的距离
-            // 勾股定理判断点是否在圆内
-            if (dx*dx + dy*dy <= radius*radius) {
-                SDL_RenderDrawPoint(renderer, x + dx, y + dy);
-            }
-        }
+#include "Util/SDL_Util.h"
+
+int main(int argc, char *argv[])
+{
+    // 1. 初始化 SDL2、SDL2_image、SDL2_ttf
+    if (initSDL() == -1)
+    {
+        printf("SDL load failed\n");
+        return -1;
     }
-}
-
-int main(int argc, char *argv[]) {
-    // 1. 初始化SDL视频模块
-    if (SDL_Init(SDL_INIT_VIDEO) < 0) {
-        printf("SDL初始化失败：%s\n", SDL_GetError());
-        return 1;
+    else
+    {
+        printf("SDL load success\n");
     }
 
-    // 2. 创建窗口 + 新增：创建渲染器（绘制图形必须）
-    SDL_Window* window = SDL_CreateWindow(
-        "SDL基础窗口+图形绘制",
+    // 2. 创建窗口
+    SDL_Window *window = SDL_CreateWindow(
+        "TEST",
         SDL_WINDOWPOS_CENTERED,
         SDL_WINDOWPOS_CENTERED,
-        800, 600,
-        SDL_WINDOW_SHOWN
+        800,
+        800,
+        SDL_WINDOW_SHOWN | SDL_WINDOW_RESIZABLE
     );
-    if (!window) {
-        printf("窗口创建失败：%s\n", SDL_GetError());
-        SDL_Quit();
-        return 1;
-    }
-    // 创建硬件加速渲染器
-    SDL_Renderer* renderer = SDL_CreateRenderer(window, -1, SDL_RENDERER_ACCELERATED);
 
-    // 3. 事件循环（绘制+退出逻辑）
+    if (window == NULL)
+    {
+        printf("create window failed: %s\n", SDL_GetError());
+        SDL_Quit();
+        return -1;
+    }
+
+    // 3. 创建渲染器
+    SDL_Renderer *renderer = SDL_CreateRenderer(
+        window,
+        -1,
+        SDL_RENDERER_ACCELERATED | SDL_RENDERER_PRESENTVSYNC
+    );
+
+    if (renderer == NULL)
+    {
+        printf("create renderer failed: %s\n", SDL_GetError());
+        SDL_DestroyWindow(window);
+        SDL_Quit();
+        return -1;
+    }
+
+    // 4. 加载图片，注意路径是相对于项目根目录
+    const char image_path[] = "assets/fmc.png";
+
+    SDL_Texture *texture = IMG_LoadTexture(renderer, image_path);
+    if (texture == NULL)
+    {
+        printf("image load failed: %s\n", IMG_GetError());
+        SDL_DestroyRenderer(renderer);
+        SDL_DestroyWindow(window);
+        IMG_Quit();
+        TTF_Quit();
+        SDL_Quit();
+        return -1;
+    }
+
+    // 图片显示位置和大小
+    SDL_Rect dstrect = {400, 400, 200, 400};
+
+    // 5. 主循环
+    int quit = 0;
     SDL_Event event;
-    int running = 1;
-    while (running) {
-        // 处理退出事件（关闭窗口/按ESC）
-        while (SDL_PollEvent(&event)) {
-            if (event.type == SDL_QUIT || (event.type == SDL_KEYDOWN && event.key.keysym.sym == SDLK_ESCAPE)) {
-                running = 0;
+
+    while (!quit)
+    {
+        // 处理事件
+        while (SDL_PollEvent(&event))
+        {
+            // 点击窗口关闭按钮退出
+            if (event.type == SDL_QUIT)
+            {
+                quit = 1;
+            }
+
+            // 按 ESC 退出
+            if (event.type == SDL_KEYDOWN && event.key.keysym.sym == SDLK_ESCAPE)
+            {
+                quit = 1;
             }
         }
 
-        // ------------------- 核心：绘制图形 -------------------
-        // 清空窗口（黑色背景）
-        SDL_SetRenderDrawColor(renderer, 0, 0, 0, 255); // RGBA：黑
+        // 6. 清屏，设置背景为黑色
+        SDL_SetRenderDrawColor(renderer, 0, 0, 0, 255);
         SDL_RenderClear(renderer);
 
-        // 1. 画点（红色，坐标(100, 100)）
-        SDL_SetRenderDrawColor(renderer, 255, 0, 0, 255); // RGBA：红
-        SDL_RenderDrawPoint(renderer, 100, 100);
+        // ==================== SDL2 基础图形绘制 ====================
 
-        // 2. 画线（绿色，从(200, 100)到(700, 100)）
-        SDL_SetRenderDrawColor(renderer, 0, 255, 0, 255); // RGBA：绿
-        SDL_RenderDrawLine(renderer, 200, 100, 700, 100);
+        // 红色点
+        SDL_SetRenderDrawColor(renderer, 255, 0, 0, 255);
+        SDL_RenderDrawPoint(renderer, 50, 50);
 
-        // 3. 画空心矩形（蓝色，左上角(200, 200)，右下角(400, 350)）
-        SDL_SetRenderDrawColor(renderer, 0, 0, 255, 255); // RGBA：蓝
-        SDL_Rect rect1 = {200, 200, 200, 150}; // x,y,宽,高
-        SDL_RenderDrawRect(renderer, &rect1);
+        // 蓝色线段
+        SDL_SetRenderDrawColor(renderer, 0, 0, 255, 255);
+        SDL_RenderDrawLine(renderer, 100, 100, 200, 200);
 
-        // 4. 画实心矩形（黄色，左上角(500, 200)，右下角(700, 350)）
-        SDL_SetRenderDrawColor(renderer, 255, 255, 0, 255); // RGBA：黄
-        SDL_Rect rect2 = {500, 200, 200, 150};
-        SDL_RenderFillRect(renderer, &rect2);
+        // 绿色空心矩形
+        SDL_SetRenderDrawColor(renderer, 0, 255, 0, 255);
+        SDL_Rect rect = {200, 200, 100, 100};
+        SDL_RenderDrawRect(renderer, &rect);
 
-        // 5. 画圆形（紫色，圆心(400, 450)，半径80）
-        SDL_SetRenderDrawColor(renderer, 128, 0, 128, 255); // RGBA：紫
-        drawCircle(renderer, 400, 450, 80);
+        // ==================== SDL2_gfx 进阶图形绘制 ====================
 
-        // 更新屏幕显示（把绘制的内容渲染到窗口）
+        // 紫色圆弧
+        arcRGBA(renderer, 150, 250, 70, 0, 270, 128, 0, 128, 255);
+
+        // 橙色扇形
+        pieRGBA(renderer, 350, 250, 70, 0, 120, 255, 165, 0, 255);
+
+        // 青色实心三角形
+        const Sint16 polyX[] = {500, 580, 540};
+        const Sint16 polyY[] = {220, 220, 140};
+        int polyCount = 3;
+
+        filledPolygonRGBA(
+            renderer,
+            polyX,
+            polyY,
+            polyCount,
+            0,
+            255,
+            255,
+            255
+        );
+
+        // ==================== 图片绘制 ====================
+
+        SDL_RenderCopy(renderer, texture, NULL, &dstrect);
+
+        // 7. 更新窗口显示
         SDL_RenderPresent(renderer);
+
+        // 控制帧率约 60 FPS
+        SDL_Delay(16);
     }
 
-    // 4. 释放资源（新增：释放渲染器）
+    // 8. 释放资源
+    SDL_DestroyTexture(texture);
     SDL_DestroyRenderer(renderer);
     SDL_DestroyWindow(window);
+
+    IMG_Quit();
+    TTF_Quit();
     SDL_Quit();
+
     return 0;
 }

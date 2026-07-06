@@ -7,11 +7,42 @@ static FILE *g_data_file = NULL;
 static int g_file_checked = 0;
 static int g_frame = 0;
 
-static float clampf(float value, float min_value, float max_value)
+static float clampf_local(float value, float min_value, float max_value)
 {
     if (value < min_value) return min_value;
     if (value > max_value) return max_value;
     return value;
+}
+
+static float normalize_heading(float heading)
+{
+    heading = fmodf(heading, 360.0f);
+    if (heading < 0.0f) {
+        heading += 360.0f;
+    }
+    return heading;
+}
+
+static float smooth_linear(float current, float target, float alpha)
+{
+    return current + (target - current) * alpha;
+}
+
+static float smooth_heading(float current, float target, float alpha)
+{
+    float delta;
+
+    current = normalize_heading(current);
+    target = normalize_heading(target);
+    delta = target - current;
+
+    if (delta > 180.0f) {
+        delta -= 360.0f;
+    } else if (delta < -180.0f) {
+        delta += 360.0f;
+    }
+
+    return normalize_heading(current + delta * alpha);
 }
 
 static FILE *open_data_file(void)
@@ -27,32 +58,47 @@ static FILE *open_data_file(void)
             return fp;
         }
     }
+
     return NULL;
 }
 
 static void normalize_data(PFD_Data *data)
 {
-    data->pitch = clampf(data->pitch, -45.0f, 45.0f);
-    data->roll = clampf(data->roll, -90.0f, 90.0f);
-    data->yaw = clampf(data->yaw, 0.0f, 359.9f);
-    data->altitude = clampf(data->altitude, -1000.0f, 50000.0f);
-    data->agl_altitude = clampf(data->agl_altitude, 0.0f, 50000.0f);
-    data->altitude_target = clampf(data->altitude_target, -1000.0f, 50000.0f);
-    data->airspeed_current = clampf(data->airspeed_current, 0.0f, 440.0f);
-    data->airspeed_target = clampf(data->airspeed_target, 0.0f, 440.0f);
-    data->vertical_speed = clampf(data->vertical_speed, -6000.0f, 6000.0f);
-    data->heading = fmodf(data->heading, 360.0f);
-    if (data->heading < 0.0f) data->heading += 360.0f;
-    data->heading_target = fmodf(data->heading_target, 360.0f);
-    if (data->heading_target < 0.0f) data->heading_target += 360.0f;
+    if (!data) {
+        return;
+    }
 
-    /* pfd.dat and internal frames use 0..100. X-Plane 0..1 throttle is converted in pfd_xplane.c later. */
-    data->throttle = clampf(data->throttle, 0.0f, 100.0f);
+    data->pitch = clampf_local(data->pitch, -45.0f, 45.0f);
+    data->roll = clampf_local(data->roll, -90.0f, 90.0f);
+    data->yaw = normalize_heading(data->yaw);
+
+    data->altitude = clampf_local(data->altitude, -1000.0f, 50000.0f);
+    data->agl_altitude = clampf_local(data->agl_altitude, 0.0f, 50000.0f);
+    data->altitude_target = clampf_local(data->altitude_target, -1000.0f, 50000.0f);
+
+    data->throttle = clampf_local(data->throttle, 0.0f, 100.0f);
+    data->airspeed_current = clampf_local(data->airspeed_current, 0.0f, 440.0f);
+    data->airspeed_target = clampf_local(data->airspeed_target, 0.0f, 440.0f);
+    data->vertical_speed = clampf_local(data->vertical_speed, -6000.0f, 6000.0f);
+
+    data->heading = normalize_heading(data->heading);
+    data->heading_target = normalize_heading(data->heading_target);
+
+    if (data->data_source < PFD_DATA_SOURCE_SIM ||
+        data->data_source > PFD_DATA_SOURCE_XPLANE) {
+        data->data_source = PFD_DATA_SOURCE_SIM;
+    }
 }
 
 static void fill_internal_frame(PFD_Data *data)
 {
-    float t = (float)g_frame / 60.0f;
+    float t;
+
+    if (!data) {
+        return;
+    }
+
+    t = (float)g_frame / 60.0f;
 
     data->airspeed_current = 210.0f + sinf(t * 0.55f) * 38.0f;
     data->airspeed_target = 230.0f + sinf(t * 0.22f) * 55.0f;
@@ -63,9 +109,10 @@ static void fill_internal_frame(PFD_Data *data)
     data->roll = sinf(t * 0.48f) * 28.0f;
     data->yaw = 0.0f;
     data->vertical_speed = cosf(t * 0.42f) * 1800.0f;
-    data->heading = fmodf(180.0f + t * 12.0f, 360.0f);
-    data->heading_target = fmodf(data->heading + 42.0f + sinf(t * 0.28f) * 20.0f, 360.0f);
+    data->heading = normalize_heading(180.0f + t * 12.0f);
+    data->heading_target = normalize_heading(data->heading + 42.0f + sinf(t * 0.28f) * 20.0f);
     data->throttle = 62.0f + sinf(t * 0.36f) * 25.0f;
+    data->data_source = PFD_DATA_SOURCE_SIM;
 
     normalize_data(data);
     ++g_frame;
@@ -90,6 +137,7 @@ void PFD_Data_Init(PFD_Data *data)
     data->vertical_speed = 0.0f;
     data->heading = 180.0f;
     data->heading_target = 200.0f;
+    data->data_source = PFD_DATA_SOURCE_SIM;
 }
 
 int PFD_Data_LoadNextFrame(PFD_Data *data)
@@ -155,14 +203,39 @@ int PFD_Data_LoadNextFrame(PFD_Data *data)
             data->heading_target = target_heading;
             data->throttle = current_thrust;
             data->yaw = current_heading;
+            data->data_source = PFD_DATA_SOURCE_FILE;
             normalize_data(data);
             return 1;
         }
     }
 
-    /* 文件存在但连续多行格式错误时，退回内部模拟数据，避免主循环卡死。 */
     fill_internal_frame(data);
     return 1;
+}
+
+void PFD_Data_Smooth(PFD_Data *display, const PFD_Data *target, float alpha)
+{
+    if (!display || !target) {
+        return;
+    }
+
+    alpha = clampf_local(alpha, 0.0f, 1.0f);
+
+    display->pitch = smooth_linear(display->pitch, target->pitch, alpha);
+    display->roll = smooth_linear(display->roll, target->roll, alpha);
+    display->yaw = smooth_heading(display->yaw, target->yaw, alpha);
+    display->altitude = smooth_linear(display->altitude, target->altitude, alpha);
+    display->agl_altitude = smooth_linear(display->agl_altitude, target->agl_altitude, alpha);
+    display->altitude_target = smooth_linear(display->altitude_target, target->altitude_target, alpha);
+    display->throttle = smooth_linear(display->throttle, target->throttle, alpha);
+    display->airspeed_current = smooth_linear(display->airspeed_current, target->airspeed_current, alpha);
+    display->airspeed_target = smooth_linear(display->airspeed_target, target->airspeed_target, alpha);
+    display->vertical_speed = smooth_linear(display->vertical_speed, target->vertical_speed, alpha);
+    display->heading = smooth_heading(display->heading, target->heading, alpha);
+    display->heading_target = smooth_heading(display->heading_target, target->heading_target, alpha);
+    display->data_source = target->data_source;
+
+    normalize_data(display);
 }
 
 void PFD_Data_Close(void)

@@ -120,8 +120,13 @@ void PFD_DrawAirspeedIndicator(SDL_Renderer *renderer, const PFD_Data *data)
 
     roundedBoxRGBA(renderer, x + 38, center_y - 21, x + w + 18, center_y + 21,
                    4, 0, 0, 0, 240);
-    roundedRectangleRGBA(renderer, x + 38, center_y - 21, x + w + 18, center_y + 21,
-                         4, 255, 255, 255, 255);
+    if (current < 80.0f) {
+        roundedRectangleRGBA(renderer, x + 38, center_y - 21, x + w + 18, center_y + 21,
+                             4, 255, 210, 40, 255);
+    } else {
+        roundedRectangleRGBA(renderer, x + 38, center_y - 21, x + w + 18, center_y + 21,
+                             4, 255, 255, 255, 255);
+    }
     snprintf(text, sizeof(text), "%03d", iroundf(current));
     draw_text_center(renderer, x + 78, center_y - 4, text, 255, 255, 255, 255);
 
@@ -275,7 +280,11 @@ void PFD_DrawAttitudeIndicator(SDL_Renderer *renderer, const PFD_Data *data)
 
     if (data->agl_altitude <= 2500.0f) {
         snprintf(text, sizeof(text), "RA %04d", iroundf(data->agl_altitude));
-        draw_text_center(renderer, (int)cx, y + h - 34, text, 255, 235, 100, 255);
+        if (data->agl_altitude < 500.0f) {
+            draw_text_center(renderer, (int)cx, y + h - 34, text, 255, 235, 80, 255);
+        } else {
+            draw_text_center(renderer, (int)cx, y + h - 34, text, 235, 245, 255, 255);
+        }
     }
 }
 
@@ -328,9 +337,17 @@ void PFD_DrawVerticalSpeedIndicator(SDL_Renderer *renderer, const PFD_Data *data
 
     snprintf(text, sizeof(text), "%d", iroundf(data->vertical_speed));
     if (data->vertical_speed >= 0.0f) {
-        stringRGBA(renderer, x - 10, y - 18, text, 255, 255, 255, 255);
+        if (fabsf(data->vertical_speed) > 3000.0f) {
+            stringRGBA(renderer, x - 10, y - 18, text, 255, 235, 80, 255);
+        } else {
+            stringRGBA(renderer, x - 10, y - 18, text, 255, 255, 255, 255);
+        }
     } else {
-        stringRGBA(renderer, x - 10, y + h + 8, text, 255, 255, 255, 255);
+        if (fabsf(data->vertical_speed) > 3000.0f) {
+            stringRGBA(renderer, x - 10, y + h + 8, text, 255, 235, 80, 255);
+        } else {
+            stringRGBA(renderer, x - 10, y + h + 8, text, 255, 255, 255, 255);
+        }
     }
 }
 
@@ -412,7 +429,7 @@ void PFD_DrawThrustIndicator(SDL_Renderer *renderer, const PFD_Data *data)
     const int cy = 606;
     const int radius = 60;
     char text[32];
-    float throttle = data->throttle <= 1.0f ? data->throttle * 100.0f : data->throttle;
+    float throttle = data->throttle;
     throttle = clampf(throttle, 0.0f, 100.0f);
 
     roundedBoxRGBA(renderer, 28, 536, 154, 682, 6, 18, 22, 26, 225);
@@ -443,7 +460,11 @@ void PFD_DrawThrustIndicator(SDL_Renderer *renderer, const PFD_Data *data)
     filledCircleRGBA(renderer, cx, cy, 5, 255, 255, 255, 255);
 
     snprintf(text, sizeof(text), "%03d%%", iroundf(throttle));
-    draw_text_center(renderer, cx, 664, text, 255, 255, 255, 255);
+    if (throttle > 90.0f) {
+        draw_text_center(renderer, cx, 664, text, 255, 235, 80, 255);
+    } else {
+        draw_text_center(renderer, cx, 664, text, 255, 255, 255, 255);
+    }
 }
 
 void PFD_DrawFlightModeAnnunciator(SDL_Renderer *renderer, const PFD_Data *data)
@@ -456,16 +477,27 @@ void PFD_DrawFlightModeAnnunciator(SDL_Renderer *renderer, const PFD_Data *data)
     const int y = 20;
     const int w = 336;
     const int h = 42;
-    (void)data;
+    int roll_active = fabsf(data->roll) > 3.0f;
+    int pitch_active = fabsf(data->pitch) > 2.0f;
 
     roundedBoxRGBA(renderer, x, y, x + w, y + h, 5, 14, 18, 22, 245);
     roundedRectangleRGBA(renderer, x, y, x + w, y + h, 5, 110, 120, 130, 255);
     lineRGBA(renderer, x + w / 3, y, x + w / 3, y + h, 80, 90, 100, 255);
     lineRGBA(renderer, x + 2 * w / 3, y, x + 2 * w / 3, y + h, 80, 90, 100, 255);
 
-    draw_text_center(renderer, x + w / 6, y + 17, "CWSR", 120, 255, 150, 255);
-    draw_text_center(renderer, x + w / 2, y + 17, "CWSP", 120, 255, 150, 255);
-    draw_text_center(renderer, x + 5 * w / 6, y + 17, "MAG", 120, 255, 150, 255);
+    if (roll_active) {
+        draw_text_center(renderer, x + w / 6, y + 17, "CWSR", 120, 255, 150, 255);
+    } else {
+        draw_text_center(renderer, x + w / 6, y + 17, "CWSR", 205, 210, 215, 255);
+    }
+
+    if (pitch_active) {
+        draw_text_center(renderer, x + w / 2, y + 17, "CWSP", 120, 255, 150, 255);
+    } else {
+        draw_text_center(renderer, x + w / 2, y + 17, "CWSP", 205, 210, 215, 255);
+    }
+
+    draw_text_center(renderer, x + 5 * w / 6, y + 17, "MAG", 205, 210, 215, 255);
 
     /* TODO_XPLANE: 后期这里接入真实飞行模式、横向模式和纵向模式数据。 */
 }

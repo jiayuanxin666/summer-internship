@@ -8,21 +8,14 @@
             "args": [
                 "-DSDL_MAIN_HANDLED",
                 "-g",
-
                 "src/PFD/pfd_main.c",
                 "src/PFD/pfd_ui.c",
                 "src/PFD/pfd_data.c",
                 "src/PFD/pfd_instruments.c",
-
                 "-o",
                 "build/PFD.exe",
-
-                "-I",
-                "D:/MSYS2/mingw64/include",
-
-                "-L",
-                "D:/MSYS2/mingw64/lib",
-
+                "-ID:/MSYS2/mingw64/include",
+                "-LD:/MSYS2/mingw64/lib",
                 "-lSDL2_gfx",
                 "-lSDL2_ttf",
                 "-lSDL2_image",
@@ -40,6 +33,43 @@
             "type": "shell",
             "command": "build/PFD.exe",
             "dependsOn": "build PFD",
+            "group": "test"
+        },
+        {
+            "label": "build PFD XPlane",
+            "type": "shell",
+            "command": "D:/MSYS2/mingw64/bin/gcc.exe",
+            "args": [
+                "-DSDL_MAIN_HANDLED",
+                "-DENABLE_XPLANE",
+                "-g",
+                "src/PFD/pfd_main.c",
+                "src/PFD/pfd_ui.c",
+                "src/PFD/pfd_data.c",
+                "src/PFD/pfd_instruments.c",
+                "src/PFD/pfd_xplane.c",
+                "src/Util/xplaneConnect.c",
+                "-o",
+                "build/PFD_XPlane.exe",
+                "-ID:/MSYS2/mingw64/include",
+                "-LD:/MSYS2/mingw64/lib",
+                "-lSDL2_gfx",
+                "-lSDL2_ttf",
+                "-lSDL2_image",
+                "-lSDL2",
+                "-lws2_32",
+                "-lm"
+            ],
+            "group": "build",
+            "problemMatcher": [
+                "$gcc"
+            ]
+        },
+        {
+            "label": "run PFD XPlane",
+            "type": "shell",
+            "command": "build/PFD_XPlane.exe",
+            "dependsOn": "build PFD XPlane",
             "group": "test"
         }
     ]

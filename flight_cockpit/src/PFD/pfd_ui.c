@@ -4,6 +4,10 @@
 #include <stdio.h>
 #include <string.h>
 
+static int g_fps_value = 0;
+static int g_fps_frames = 0;
+static Uint32 g_fps_last_tick = 0;
+
 static void PFD_UI_UpdateRenderRect(PFD_UI *ui)
 {
     float scale_x;
@@ -37,10 +41,55 @@ static void PFD_UI_UpdateRenderRect(PFD_UI *ui)
     ui->render_rect.h = render_h;
 }
 
+static const char *data_source_text(int data_source)
+{
+    switch (data_source) {
+    case PFD_DATA_SOURCE_FILE:
+        return "SRC FILE";
+    case PFD_DATA_SOURCE_XPLANE:
+        return "SRC XPLANE";
+    case PFD_DATA_SOURCE_SIM:
+    default:
+        return "SRC SIM";
+    }
+}
+
+static void update_fps_counter(void)
+{
+    Uint32 now = SDL_GetTicks();
+
+    if (g_fps_last_tick == 0) {
+        g_fps_last_tick = now;
+    }
+
+    ++g_fps_frames;
+    if (now - g_fps_last_tick >= 1000) {
+        g_fps_value = g_fps_frames;
+        g_fps_frames = 0;
+        g_fps_last_tick = now;
+    }
+}
+
+static void draw_status_overlay(SDL_Renderer *renderer, const PFD_Data *data)
+{
+    char text[32];
+
+    if (!renderer || !data) {
+        return;
+    }
+
+    roundedBoxRGBA(renderer, 10, 684, 142, 714, 4, 0, 0, 0, 175);
+    snprintf(text, sizeof(text), "FPS: %02d", g_fps_value);
+    stringRGBA(renderer, 18, 693, text, 180, 220, 235, 255);
+
+    roundedBoxRGBA(renderer, 650, 12, 762, 38, 4, 0, 0, 0, 175);
+    stringRGBA(renderer, 660, 21, data_source_text(data->data_source), 180, 220, 235, 255);
+}
+
 int PFD_UI_Init(PFD_UI *ui)
 {
     if (!ui) {
-        return 0;
+        return -1;
     }
 
     memset(ui, 0, sizeof(*ui));
@@ -56,8 +105,8 @@ int PFD_UI_Init(PFD_UI *ui)
         SDL_WINDOW_SHOWN | SDL_WINDOW_RESIZABLE);
 
     if (!ui->window) {
-        printf("SDL_CreateWindow failed: %s\n", SDL_GetError());
-        return 0;
+        printf("PFD window creation failed: %s\n", SDL_GetError());
+        return -1;
     }
 
     ui->renderer = SDL_CreateRenderer(
@@ -68,9 +117,9 @@ int PFD_UI_Init(PFD_UI *ui)
         SDL_RENDERER_TARGETTEXTURE);
 
     if (!ui->renderer) {
-        printf("SDL_CreateRenderer failed: %s\n", SDL_GetError());
+        printf("PFD renderer creation failed: %s\n", SDL_GetError());
         PFD_UI_Destroy(ui);
-        return 0;
+        return -1;
     }
 
     SDL_SetHint(SDL_HINT_RENDER_SCALE_QUALITY, "linear");
@@ -83,14 +132,14 @@ int PFD_UI_Init(PFD_UI *ui)
         PFD_LOGIC_HEIGHT);
 
     if (!ui->logic_texture) {
-        printf("SDL_CreateTexture failed: %s\n", SDL_GetError());
+        printf("PFD logic texture creation failed: %s\n", SDL_GetError());
         PFD_UI_Destroy(ui);
-        return 0;
+        return -1;
     }
 
     SDL_SetTextureBlendMode(ui->logic_texture, SDL_BLENDMODE_BLEND);
     PFD_UI_UpdateRenderRect(ui);
-    return 1;
+    return 0;
 }
 
 void PFD_UI_HandleEvent(PFD_UI *ui, SDL_Event *event, int *running)
@@ -117,6 +166,8 @@ void PFD_UI_Render(PFD_UI *ui, const PFD_Data *data)
         return;
     }
 
+    update_fps_counter();
+
     SDL_SetRenderTarget(ui->renderer, ui->logic_texture);
     SDL_SetRenderDrawColor(ui->renderer, 2, 3, 5, 255);
     SDL_RenderClear(ui->renderer);
@@ -131,13 +182,16 @@ void PFD_UI_Render(PFD_UI *ui, const PFD_Data *data)
 
     rectangleRGBA(ui->renderer, 0, 0, PFD_LOGIC_WIDTH - 1, PFD_LOGIC_HEIGHT - 1,
                   70, 75, 85, 255);
-    stringRGBA(ui->renderer, 12, PFD_LOGIC_HEIGHT - 18, "PFD SDL2 DEMO  TODO_XPLANE READY",
-               145, 150, 160, 255);
+    draw_status_overlay(ui->renderer, data);
 
     SDL_SetRenderTarget(ui->renderer, NULL);
     SDL_SetRenderDrawColor(ui->renderer, 0, 0, 0, 255);
     SDL_RenderClear(ui->renderer);
-    SDL_RenderCopy(ui->renderer, ui->logic_texture, NULL, &ui->render_rect);
+
+    if (ui->render_rect.w > 0 && ui->render_rect.h > 0) {
+        SDL_RenderCopy(ui->renderer, ui->logic_texture, NULL, &ui->render_rect);
+    }
+
     SDL_RenderPresent(ui->renderer);
 }
 
@@ -151,10 +205,12 @@ void PFD_UI_Destroy(PFD_UI *ui)
         SDL_DestroyTexture(ui->logic_texture);
         ui->logic_texture = NULL;
     }
+
     if (ui->renderer) {
         SDL_DestroyRenderer(ui->renderer);
         ui->renderer = NULL;
     }
+
     if (ui->window) {
         SDL_DestroyWindow(ui->window);
         ui->window = NULL;
