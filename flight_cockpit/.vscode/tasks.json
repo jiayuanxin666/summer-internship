@@ -71,6 +71,211 @@
             "command": "build/PFD_XPlane.exe",
             "dependsOn": "build PFD XPlane",
             "group": "test"
+        },
+        {
+            "label": "build ND",
+            "type": "shell",
+            "command": "D:/MSYS2/mingw64/bin/gcc.exe",
+            "args": [
+                "-DSDL_MAIN_HANDLED",
+                "-g",
+                "src/ND/nd_main.c",
+                "src/ND/nd_ui.c",
+                "src/ND/nd_data.c",
+                "-o",
+                "build/ND.exe",
+                "-ID:/MSYS2/mingw64/include",
+                "-LD:/MSYS2/mingw64/lib",
+                "-lSDL2_gfx",
+                "-lSDL2_ttf",
+                "-lSDL2_image",
+                "-lSDL2",
+                "-lws2_32",
+                "-lm"
+            ],
+            "group": "build",
+            "problemMatcher": [
+                "$gcc"
+            ]
+        },
+        {
+            "label": "run ND",
+            "type": "shell",
+            "command": "build/ND.exe",
+            "dependsOn": "build ND",
+            "group": "test"
+        },
+        {
+            "label": "build ND XPlane",
+            "type": "shell",
+            "command": "D:/MSYS2/mingw64/bin/gcc.exe",
+            "args": [
+                "-DSDL_MAIN_HANDLED",
+                "-DENABLE_XPLANE",
+                "-g",
+                "src/ND/nd_main.c",
+                "src/ND/nd_ui.c",
+                "src/ND/nd_data.c",
+                "src/ND/nd_xplane.c",
+                "src/Util/xplaneConnect.c",
+                "-o",
+                "build/ND_XPlane.exe",
+                "-ID:/MSYS2/mingw64/include",
+                "-LD:/MSYS2/mingw64/lib",
+                "-lSDL2_gfx",
+                "-lSDL2_ttf",
+                "-lSDL2_image",
+                "-lSDL2",
+                "-lws2_32",
+                "-lm"
+            ],
+            "group": "build",
+            "problemMatcher": [
+                "$gcc"
+            ]
+        },
+        {
+            "label": "run ND XPlane",
+            "type": "shell",
+            "command": "build/ND_XPlane.exe",
+            "dependsOn": "build ND XPlane",
+            "group": "test"
+        },
+        {
+            "label": "build EICAS1",
+            "type": "shell",
+            "command": "D:/MSYS2/mingw64/bin/gcc.exe",
+            "args": [
+                "-DSDL_MAIN_HANDLED",
+                "-g",
+                "src/EICAS1/eicas1_main.c",
+                "src/EICAS1/eicas1_ui.c",
+                "src/EICAS1/eicas1_data.c",
+                "-o",
+                "build/EICAS1.exe",
+                "-ID:/MSYS2/mingw64/include",
+                "-LD:/MSYS2/mingw64/lib",
+                "-lSDL2_gfx",
+                "-lSDL2_ttf",
+                "-lSDL2_image",
+                "-lSDL2",
+                "-lws2_32",
+                "-lm"
+            ],
+            "group": "build",
+            "problemMatcher": [
+                "$gcc"
+            ]
+        },
+        {
+            "label": "run EICAS1",
+            "type": "shell",
+            "command": "build/EICAS1.exe",
+            "dependsOn": "build EICAS1",
+            "group": "test"
+        },
+        {
+            "label": "build EICAS1 XPlane",
+            "type": "shell",
+            "command": "D:/MSYS2/mingw64/bin/gcc.exe",
+            "args": [
+                "-DSDL_MAIN_HANDLED",
+                "-DENABLE_XPLANE",
+                "-g",
+                "src/EICAS1/eicas1_main.c",
+                "src/EICAS1/eicas1_ui.c",
+                "src/EICAS1/eicas1_data.c",
+                "src/Util/xplaneConnect.c",
+                "-o",
+                "build/EICAS1_XPlane.exe",
+                "-ID:/MSYS2/mingw64/include",
+                "-LD:/MSYS2/mingw64/lib",
+                "-lSDL2_gfx",
+                "-lSDL2_ttf",
+                "-lSDL2_image",
+                "-lSDL2",
+                "-lws2_32",
+                "-lm"
+            ],
+            "group": "build",
+            "problemMatcher": [
+                "$gcc"
+            ]
+        },
+        {
+            "label": "run EICAS1 XPlane",
+            "type": "shell",
+            "command": "build/EICAS1_XPlane.exe",
+            "dependsOn": "build EICAS1 XPlane",
+            "group": "test"
+        },
+        {
+            "label": "build EICAS2",
+            "type": "shell",
+            "command": "D:/MSYS2/mingw64/bin/gcc.exe",
+            "args": [
+                "-DSDL_MAIN_HANDLED",
+                "-g",
+                "src/EICAS2/eicas2_main.c",
+                "src/EICAS2/eicas2_ui.c",
+                "src/EICAS2/eicas2_data.c",
+                "-o",
+                "build/EICAS2.exe",
+                "-ID:/MSYS2/mingw64/include",
+                "-LD:/MSYS2/mingw64/lib",
+                "-lSDL2_gfx",
+                "-lSDL2_ttf",
+                "-lSDL2_image",
+                "-lSDL2",
+                "-lws2_32",
+                "-lm"
+            ],
+            "group": "build",
+            "problemMatcher": [
+                "$gcc"
+            ]
+        },
+        {
+            "label": "run EICAS2",
+            "type": "shell",
+            "command": "build/EICAS2.exe",
+            "dependsOn": "build EICAS2",
+            "group": "test"
+        },
+        {
+            "label": "build EICAS2 XPlane",
+            "type": "shell",
+            "command": "D:/MSYS2/mingw64/bin/gcc.exe",
+            "args": [
+                "-DSDL_MAIN_HANDLED",
+                "-DENABLE_XPLANE",
+                "-g",
+                "src/EICAS2/eicas2_main.c",
+                "src/EICAS2/eicas2_ui.c",
+                "src/EICAS2/eicas2_data.c",
+                "src/Util/xplaneConnect.c",
+                "-o",
+                "build/EICAS2_XPlane.exe",
+                "-ID:/MSYS2/mingw64/include",
+                "-LD:/MSYS2/mingw64/lib",
+                "-lSDL2_gfx",
+                "-lSDL2_ttf",
+                "-lSDL2_image",
+                "-lSDL2",
+                "-lws2_32",
+                "-lm"
+            ],
+            "group": "build",
+            "problemMatcher": [
+                "$gcc"
+            ]
+        },
+        {
+            "label": "run EICAS2 XPlane",
+            "type": "shell",
+            "command": "build/EICAS2_XPlane.exe",
+            "dependsOn": "build EICAS2 XPlane",
+            "group": "test"
         }
     ]
 }
