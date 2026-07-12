@@ -1,4 +1,5 @@
 #include "nd_data.h"
+#include <SDL2/SDL.h>
 #include <math.h>
 #include <stdio.h>
 #include <stdlib.h>
@@ -99,11 +100,30 @@ float ND_Data_BearingDeg(double lat1, double lon1, double lat2, double lon2)
 
 static FILE *open_first_existing(const char *a, const char *b)
 {
+    char full_path[1024];
+    char *base_path;
     FILE *fp = fopen(a, "r");
     if (fp) {
         return fp;
     }
-    return fopen(b, "r");
+
+    fp = fopen(b, "r");
+    if (fp) {
+        return fp;
+    }
+
+    base_path = SDL_GetBasePath();
+    if (base_path) {
+        snprintf(full_path, sizeof(full_path), "%s%s", base_path, a);
+        fp = fopen(full_path, "r");
+        if (!fp) {
+            snprintf(full_path, sizeof(full_path), "%s%s", base_path, b);
+            fp = fopen(full_path, "r");
+        }
+        SDL_free(base_path);
+    }
+
+    return fp;
 }
 
 static FILE *open_data_file(void)

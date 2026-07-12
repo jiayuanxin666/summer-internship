@@ -71,6 +71,8 @@ static TTF_Font *open_consolas_font(int size)
     const char *paths[] = {
         "assets/fonts/consola.ttf",
         "../assets/fonts/consola.ttf",
+        "assets/ALIBABAPUHUITI-2-45-LIGHT.TTF",
+        "../assets/ALIBABAPUHUITI-2-45-LIGHT.TTF",
         "C:/Windows/Fonts/consola.ttf",
         "C:/Windows/Fonts/consolab.ttf"
     };

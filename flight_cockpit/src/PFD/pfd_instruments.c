@@ -499,5 +499,5 @@ void PFD_DrawFlightModeAnnunciator(SDL_Renderer *renderer, const PFD_Data *data)
 
     draw_text_center(renderer, x + 5 * w / 6, y + 17, "MAG", 205, 210, 215, 255);
 
-    /* TODO_XPLANE: 后期这里接入真实飞行模式、横向模式和纵向模式数据。 */
+    /* TODO_XPLANE: connect real flight, lateral, and vertical mode data. */
 }

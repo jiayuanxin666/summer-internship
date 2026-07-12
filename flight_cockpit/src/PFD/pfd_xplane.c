@@ -4,6 +4,7 @@
 
 #include "../Util/xplaneConnect.h"
 #include <math.h>
+#include <stdio.h>
 
 #define PFD_XPLANE_DREF_COUNT 12
 
@@ -54,7 +55,7 @@ static int fetch_probe(void)
 
 int PFD_XPlane_Open(void)
 {
-    g_xpc_socket = openUDP("127.0.0.1");
+    g_xpc_socket = aopenUDP("127.0.0.1", PFD_XPLANE_PORT, 0);
     g_xpc_open = XPCSocket_IsOpen(g_xpc_socket);
 
     if (!g_xpc_open) {
@@ -88,6 +89,7 @@ int PFD_XPlane_FetchData(PFD_Data *data)
     };
     float values[PFD_XPLANE_DREF_COUNT][8];
     float throttle_sum = 0.0f;
+    int engine_count = PFD_ENGINE_COUNT;
 
     if (!data || !g_xpc_open) {
         return 0;
@@ -97,7 +99,9 @@ int PFD_XPlane_FetchData(PFD_Data *data)
         return 0;
     }
 
-    for (int i = 0; i < 8; ++i) {
+    if (engine_count < 1) engine_count = 1;
+    if (engine_count > 8) engine_count = 8;
+    for (int i = 0; i < engine_count; ++i) {
         throttle_sum += values[5][i];
     }
 
@@ -106,7 +110,7 @@ int PFD_XPlane_FetchData(PFD_Data *data)
     data->yaw = values[2][0];
     data->altitude = values[3][0] * 3.28084f;
     data->agl_altitude = values[4][0] * 3.28084f;
-    data->throttle = (throttle_sum / 8.0f) * 100.0f;
+    data->throttle = (throttle_sum / (float)engine_count) * 100.0f;
     data->airspeed_current = values[6][0];
     data->airspeed_target = values[7][0];
     data->vertical_speed = values[8][0];

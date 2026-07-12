@@ -9,6 +9,7 @@
 
 #include "nd_data.h"
 #include "nd_ui.h"
+#include "../Util/route_ipc.h"
 
 #ifdef ENABLE_XPLANE
 #include "nd_xplane.h"
@@ -46,6 +47,8 @@ int main(int argc, char *argv[])
     ND_Data display_data;
     SDL_Event event;
     int running = 1;
+    RouteIPC *route_ipc = NULL;
+    unsigned int route_sequence = 0;
 #ifdef ENABLE_XPLANE
     int xplane_available = 0;
     HANDLE data_thread = NULL;
@@ -80,6 +83,7 @@ int main(int argc, char *argv[])
 
     ND_Data_Init(&raw_data);
     ND_Data_Init(&display_data);
+    route_ipc = RouteIPC_Open(0);
 
 #ifdef ENABLE_XPLANE
     xplane_available = ND_XPlane_Open();
@@ -121,6 +125,21 @@ int main(int argc, char *argv[])
         ND_Data_LoadNextFrame(&raw_data);
 #endif
 
+        if (!route_ipc) route_ipc = RouteIPC_Open(0);
+        if (route_ipc) {
+            RouteIPCData shared;
+            if (RouteIPC_Read(route_ipc, &shared, &route_sequence)) {
+                raw_data.route_count = shared.point_count > ND_MAX_ROUTE_POINTS ? ND_MAX_ROUTE_POINTS : shared.point_count;
+                for (int i = 0; i < raw_data.route_count; ++i) {
+                    snprintf(raw_data.route[i].ident, sizeof(raw_data.route[i].ident), "%s", shared.points[i].ident);
+                    raw_data.route[i].latitude = shared.points[i].latitude;
+                    raw_data.route[i].longitude = shared.points[i].longitude;
+                    raw_data.route[i].type = ND_POINT_ROUTE;
+                }
+                ND_Data_UpdateNavigation(&raw_data);
+            }
+        }
+
         ND_Data_Smooth(&display_data, &raw_data, 0.16f);
         ND_UI_Render(&ui, &display_data);
 
@@ -137,6 +156,7 @@ int main(int argc, char *argv[])
     ND_XPlane_Close();
 #endif
 
+    RouteIPC_Close(route_ipc);
     ND_Data_Close();
     ND_UI_Destroy(&ui);
     IMG_Quit();

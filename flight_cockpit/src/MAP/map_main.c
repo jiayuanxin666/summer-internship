@@ -1,0 +1,17 @@
+#ifndef SDL_MAIN_HANDLED
+#define SDL_MAIN_HANDLED
+#endif
+#include <SDL2/SDL.h>
+#include <SDL2/SDL_image.h>
+#include <SDL2/SDL_ttf.h>
+#include <curl/curl.h>
+#include <stdio.h>
+#include <stdlib.h>
+#include <string.h>
+#include "map_data.h"
+#include "map_ui.h"
+
+typedef struct { SDL_mutex *mutex; MAP_Data data; MAP_HTTP_Response image; char key[128]; int stop,request,busy,ready; } Worker;
+static int worker_main(void *arg){Worker*w=arg;while(!w->stop){if(!w->request){SDL_Delay(50);continue;}SDL_LockMutex(w->mutex);w->request=0;w->busy=1;MAP_Data local=w->data;SDL_UnlockMutex(w->mutex);MAP_Data_FetchXPlane(&local);MAP_Data_FetchLocationWeather(&local,w->key);MAP_HTTP_Response img={0};MAP_Data_FetchStaticMap(&local,w->key,800,450,&img);SDL_LockMutex(w->mutex);w->data=local;if(img.bytes){MAP_HTTP_Free(&w->image);w->image=img;w->ready=1;}w->busy=0;SDL_UnlockMutex(w->mutex);}return 0;}
+static void load_key_file(char *key,size_t size){const char*paths[]={"assets/map.local.cfg","../assets/map.local.cfg","../../assets/map.local.cfg"};char line[256];for(unsigned i=0;i<sizeof(paths)/sizeof(paths[0]);i++){FILE*f=fopen(paths[i],"r");if(!f)continue;while(fgets(line,sizeof(line),f)){if(!strncmp(line,"AMAP_API_KEY=",13)){line[strcspn(line,"\r\n")]=0;snprintf(key,size,"%.*s",(int)size-1,line+13);}}fclose(f);if(*key)return;}}
+int main(int argc,char**argv){int embedded=0,self_test=0,api_test=0,smoke=0,running=1,refresh=1;Worker w={0};MAP_UI ui;SDL_Thread*thread;const char*env=getenv("AMAP_API_KEY");for(int i=1;i<argc;i++){if(!strcmp(argv[i],"--embedded"))embedded=1;else if(!strcmp(argv[i],"--self-test"))self_test=1;else if(!strcmp(argv[i],"--api-test"))api_test=1;else if(!strcmp(argv[i],"--smoke"))smoke=1;else if(!strcmp(argv[i],"--amap-key")&&i+1<argc)env=argv[++i];}if(self_test){int ok=MAP_Data_SelfTest();printf("MAP self-test: %s\n",ok?"PASS":"FAIL");return ok?0:1;}curl_global_init(CURL_GLOBAL_DEFAULT);MAP_Data_Init(&w.data);if(env)snprintf(w.key,sizeof(w.key),"%s",env);else load_key_file(w.key,sizeof(w.key));if(api_test){MAP_HTTP_Response image={0};int info_ok=MAP_Data_FetchLocationWeather(&w.data,w.key);int map_ok=MAP_Data_FetchStaticMap(&w.data,w.key,800,450,&image);printf("Amap API: info=%s map=%s bytes=%zu city=%s weather=%s\n",info_ok?"PASS":"FAIL",map_ok?"PASS":"FAIL",image.size,w.data.city,w.data.weather);MAP_HTTP_Free(&image);curl_global_cleanup();return info_ok&&map_ok?0:1;}SDL_SetMainReady();if(SDL_Init(SDL_INIT_VIDEO|SDL_INIT_TIMER)||TTF_Init()<0||!(IMG_Init(IMG_INIT_PNG)&IMG_INIT_PNG))return 1;w.mutex=SDL_CreateMutex();if(!MAP_UI_Init(&ui,embedded))return 1;thread=SDL_CreateThread(worker_main,"MAP data",&w);Uint32 last=0,start=SDL_GetTicks();while(running){SDL_Event e;while(SDL_PollEvent(&e)){SDL_LockMutex(w.mutex);MAP_UI_HandleEvent(&ui,&e,&running,&w.data,&refresh);SDL_UnlockMutex(w.mutex);}if(refresh||SDL_GetTicks()-last>=30000){SDL_LockMutex(w.mutex);if(!w.busy){w.request=1;last=SDL_GetTicks();refresh=0;}SDL_UnlockMutex(w.mutex);}SDL_LockMutex(w.mutex);if(w.ready){MAP_UI_SetMapBytes(&ui,w.image.bytes,w.image.size);w.ready=0;}MAP_Data current=w.data;SDL_UnlockMutex(w.mutex);MAP_UI_Render(&ui,&current);if(smoke&&SDL_GetTicks()-start>500)running=0;SDL_Delay(16);}SDL_LockMutex(w.mutex);w.stop=1;SDL_UnlockMutex(w.mutex);SDL_WaitThread(thread,NULL);MAP_HTTP_Free(&w.image);MAP_Data_CloseXPlane();SDL_DestroyMutex(w.mutex);MAP_UI_Destroy(&ui);curl_global_cleanup();IMG_Quit();TTF_Quit();SDL_Quit();return 0;}

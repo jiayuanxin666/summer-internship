@@ -1,4 +1,5 @@
 #include "pfd_data.h"
+#include <SDL2/SDL.h>
 #include <math.h>
 #include <stdio.h>
 #include <string.h>
@@ -51,9 +52,25 @@ static FILE *open_data_file(void)
         "assets/pfd.dat",
         "../assets/pfd.dat"
     };
+    char full_path[1024];
+    char *base_path;
 
     for (int i = 0; i < 2; ++i) {
         FILE *fp = fopen(paths[i], "r");
+        if (fp) {
+            return fp;
+        }
+    }
+
+    base_path = SDL_GetBasePath();
+    if (base_path) {
+        snprintf(full_path, sizeof(full_path), "%s../assets/pfd.dat", base_path);
+        FILE *fp = fopen(full_path, "r");
+        if (!fp) {
+            snprintf(full_path, sizeof(full_path), "%sassets/pfd.dat", base_path);
+            fp = fopen(full_path, "r");
+        }
+        SDL_free(base_path);
         if (fp) {
             return fp;
         }

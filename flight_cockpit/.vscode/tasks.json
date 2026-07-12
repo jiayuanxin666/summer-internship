@@ -82,6 +82,7 @@
                 "src/ND/nd_main.c",
                 "src/ND/nd_ui.c",
                 "src/ND/nd_data.c",
+                "src/Util/route_ipc.c",
                 "-o",
                 "build/ND.exe",
                 "-ID:/MSYS2/mingw64/include",
@@ -118,6 +119,7 @@
                 "src/ND/nd_data.c",
                 "src/ND/nd_xplane.c",
                 "src/Util/xplaneConnect.c",
+                "src/Util/route_ipc.c",
                 "-o",
                 "build/ND_XPlane.exe",
                 "-ID:/MSYS2/mingw64/include",
@@ -275,6 +277,148 @@
             "type": "shell",
             "command": "build/EICAS2_XPlane.exe",
             "dependsOn": "build EICAS2 XPlane",
+            "group": "test"
+        },
+        {
+            "label": "build FMC",
+            "type": "shell",
+            "command": "D:/MSYS2/mingw64/bin/gcc.exe",
+            "args": [
+                "-std=c17",
+                "-Wall",
+                "-Wextra",
+                "-DSDL_MAIN_HANDLED",
+                "-g",
+                "src/FMC/fmc_main.c",
+                "src/FMC/fmc_display.c",
+                "src/FMC/fmc_event.c",
+                "src/FMC/fmc_data.c",
+                "src/FMC/fmc_key.c",
+                "src/FMC/fmc_connect.c",
+                "src/Util/route_ipc.c",
+                "-o",
+                "build/FMC.exe",
+                "-ID:/MSYS2/mingw64/include",
+                "-LD:/MSYS2/mingw64/lib",
+                "-lSDL2_gfx",
+                "-lSDL2_ttf",
+                "-lSDL2_image",
+                "-lSDL2",
+                "-lws2_32",
+                "-lm"
+            ],
+            "group": "build",
+            "problemMatcher": [
+                "$gcc"
+            ]
+        },
+        {
+            "label": "run FMC",
+            "type": "shell",
+            "command": "build/FMC.exe",
+            "dependsOn": "build FMC",
+            "group": "test"
+        },
+        {
+            "label": "test FMC",
+            "type": "shell",
+            "command": "build/FMC.exe",
+            "args": [
+                "--self-test"
+            ],
+            "dependsOn": "build FMC",
+            "group": "test"
+        },
+        {
+            "label": "build FMC XPlane",
+            "type": "shell",
+            "command": "D:/MSYS2/mingw64/bin/gcc.exe",
+            "args": [
+                "-std=c17",
+                "-Wall",
+                "-Wextra",
+                "-DSDL_MAIN_HANDLED",
+                "-DENABLE_XPLANE",
+                "-g",
+                "src/FMC/fmc_main.c",
+                "src/FMC/fmc_display.c",
+                "src/FMC/fmc_event.c",
+                "src/FMC/fmc_data.c",
+                "src/FMC/fmc_key.c",
+                "src/FMC/fmc_connect.c",
+                "src/Util/xplaneConnect.c",
+                "src/Util/route_ipc.c",
+                "-o",
+                "build/FMC_XPlane.exe",
+                "-ID:/MSYS2/mingw64/include",
+                "-LD:/MSYS2/mingw64/lib",
+                "-lSDL2_gfx",
+                "-lSDL2_ttf",
+                "-lSDL2_image",
+                "-lSDL2",
+                "-lws2_32",
+                "-lm"
+            ],
+            "group": "build",
+            "problemMatcher": [
+                "$gcc"
+            ]
+        },
+        {
+            "label": "run FMC XPlane",
+            "type": "shell",
+            "command": "build/FMC_XPlane.exe",
+            "dependsOn": "build FMC XPlane",
+            "group": "test"
+        },
+        {
+            "label": "build Cockpit",
+            "type": "shell",
+            "command": "D:/MSYS2/mingw64/bin/gcc.exe",
+            "args": [
+                "-std=c17",
+                "-Wall",
+                "-Wextra",
+                "-DSDL_MAIN_HANDLED",
+                "-g",
+                "src/main.c",
+                "src/cockpit.c",
+                "src/Util/cockpit_alarm.c",
+                "src/Util/xplaneConnect.c",
+                "-o",
+                "build/Cockpit.exe",
+                "-ID:/MSYS2/mingw64/include",
+                "-LD:/MSYS2/mingw64/lib",
+                "-lSDL2_image",
+                "-lSDL2_gfx",
+                "-lSDL2",
+                "-lws2_32",
+                "-lm"
+            ],
+            "group": "build",
+            "problemMatcher": ["$gcc"]
+        },
+        {
+            "label": "run Cockpit",
+            "type": "shell",
+            "command": "build/Cockpit.exe",
+            "dependsOn": "build Cockpit",
+            "group": "test"
+        },
+        {
+            "label": "test Cockpit",
+            "type": "shell",
+            "command": "build/Cockpit.exe",
+            "args": ["--self-test"],
+            "dependsOn": "build Cockpit",
+            "group": "test"
+        },
+        {
+            "label": "smoke Cockpit",
+            "type": "shell",
+            "command": "build/Cockpit.exe",
+            "args": ["--smoke"],
+            "dependsOn": "build Cockpit",
             "group": "test"
         }
     ]
