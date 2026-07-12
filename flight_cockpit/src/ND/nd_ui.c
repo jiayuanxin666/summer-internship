@@ -6,6 +6,14 @@
 
 #define ND_PI 3.14159265358979323846f
 #define ND_MAP_RANGE_NM 80.0f
+#define ND_MAX_MAP_LABELS 24
+#define ND_MAX_WAYPOINT_LABELS 8
+
+typedef struct
+{
+    SDL_Rect rects[ND_MAX_MAP_LABELS];
+    int count;
+} ND_LabelLayout;
 
 static int g_fps_value = 0;
 static int g_fps_frames = 0;
@@ -253,6 +261,28 @@ static void map_project(float cx, float cy, float radius, float distance_nm, flo
     *out_y = iroundf_local(cy - cosf(angle) * radius * distance);
 }
 
+static int reserve_map_label(ND_LabelLayout *layout, int x, int y, const char *text)
+{
+    SDL_Rect rect;
+
+    if (!layout || !text || layout->count >= ND_MAX_MAP_LABELS) {
+        return 0;
+    }
+
+    rect.x = x - 3;
+    rect.y = y - 2;
+    rect.w = text_width(text) + 6;
+    rect.h = 14;
+    for (int i = 0; i < layout->count; ++i) {
+        if (SDL_HasIntersection(&rect, &layout->rects[i])) {
+            return 0;
+        }
+    }
+
+    layout->rects[layout->count++] = rect;
+    return 1;
+}
+
 static void draw_top_data(ND_UI *ui, const ND_Data *data)
 {
     SDL_Renderer *renderer;
@@ -274,8 +304,7 @@ static void draw_top_data(ND_UI *ui, const ND_Data *data)
     snprintf(text, sizeof(text), "%03d", iroundf_local(data->true_air_speed));
     draw_ttf_text_right(renderer, ui->font_medium, 154, 40, text, color_speed());
     draw_ttf_text(renderer, ui->font_small, 22, 66, "WIND", color_aux());
-    snprintf(text, sizeof(text), "%03d/%02d",
-             iroundf_local(data->wind_direction), iroundf_local(data->wind_speed));
+    snprintf(text, sizeof(text), "---\xC2\xB0/---");
     draw_ttf_text_right(renderer, ui->font_small, 154, 66, text, color_aux());
 
     roundedBoxRGBA(renderer, 276, 12, 475, 86, 5, 5, 8, 11, 220);
@@ -373,7 +402,7 @@ static void draw_range_rings(SDL_Renderer *renderer, int cx, int cy, int radius)
 }
 
 static void draw_route(SDL_Renderer *renderer, const ND_Data *data,
-                       int cx, int cy, int radius)
+                       int cx, int cy, int radius, ND_LabelLayout *labels)
 {
     int prev_valid = 0;
     int prev_x = 0;
@@ -397,7 +426,9 @@ static void draw_route(SDL_Renderer *renderer, const ND_Data *data,
 
         filledCircleRGBA(renderer, x, y, 5, 210, 70, 255, 255);
         circleRGBA(renderer, x, y, 9, 210, 70, 255, 255);
-        stringRGBA(renderer, x + 10, y - 4, point->ident, 235, 220, 255, 255);
+        if (reserve_map_label(labels, x + 10, y - 4, point->ident)) {
+            stringRGBA(renderer, x + 10, y - 4, point->ident, 235, 220, 255, 255);
+        }
         prev_x = x;
         prev_y = y;
         prev_valid = 1;
@@ -405,9 +436,10 @@ static void draw_route(SDL_Renderer *renderer, const ND_Data *data,
 }
 
 static void draw_nearby_points(SDL_Renderer *renderer, const ND_Data *data,
-                               int cx, int cy, int radius)
+                               int cx, int cy, int radius, ND_LabelLayout *labels)
 {
     char label[64];
+    int waypoint_labels = 0;
 
     for (int i = 0; i < data->nearby_count; ++i) {
         const ND_MapPoint *point = &data->nearby[i];
@@ -423,17 +455,49 @@ static void draw_nearby_points(SDL_Renderer *renderer, const ND_Data *data,
 
         if (point->type == ND_POINT_AIRPORT) {
             rectangleRGBA(renderer, x - 6, y - 6, x + 6, y + 6, 120, 220, 255, 255);
-            snprintf(label, sizeof(label), "%s", point->ident);
-            stringRGBA(renderer, x + 9, y - 4, label, 120, 220, 255, 255);
         } else if (point->type == ND_POINT_NAVAID) {
             circleRGBA(renderer, x, y, 6, 255, 205, 90, 255);
-            snprintf(label, sizeof(label), "%s", point->ident);
-            stringRGBA(renderer, x + 9, y - 4, label, 255, 205, 90, 255);
-        } else if ((i % 5) == 0) {
+        } else {
             lineRGBA(renderer, x - 4, y, x + 4, y, 185, 198, 205, 230);
             lineRGBA(renderer, x, y - 4, x, y + 4, 185, 198, 205, 230);
+        }
+    }
+
+    for (int pass = 0; pass < 3; ++pass) {
+        for (int i = 0; i < data->nearby_count; ++i) {
+            const ND_MapPoint *point = &data->nearby[i];
+            int x;
+            int y;
+            int label_x;
+
+            if (point->distance_nm > ND_MAP_RANGE_NM || fabsf(point->relative_angle_deg) > 50.0f) {
+                continue;
+            }
+            if ((pass == 0 && point->type != ND_POINT_AIRPORT) ||
+                (pass == 1 && point->type != ND_POINT_NAVAID) ||
+                (pass == 2 && point->type != ND_POINT_WAYPOINT)) {
+                continue;
+            }
+            if (pass == 2 && waypoint_labels >= ND_MAX_WAYPOINT_LABELS) {
+                continue;
+            }
+
+            map_project((float)cx, (float)cy, (float)radius,
+                        point->distance_nm, point->relative_angle_deg, &x, &y);
             snprintf(label, sizeof(label), "%s", point->ident);
-            stringRGBA(renderer, x + 7, y - 4, label, 185, 198, 205, 230);
+            label_x = x + (pass == 2 ? 7 : 9);
+            if (!reserve_map_label(labels, label_x, y - 4, label)) {
+                continue;
+            }
+
+            if (pass == 0) {
+                stringRGBA(renderer, label_x, y - 4, label, 120, 220, 255, 255);
+            } else if (pass == 1) {
+                stringRGBA(renderer, label_x, y - 4, label, 255, 205, 90, 255);
+            } else {
+                stringRGBA(renderer, label_x, y - 4, label, 185, 198, 205, 230);
+                ++waypoint_labels;
+            }
         }
     }
 }
@@ -470,6 +534,7 @@ static void draw_map(SDL_Renderer *renderer, const ND_Data *data)
     const int cy = 424;
     const int radius = 292;
     SDL_Rect clip = {18, 96, ND_LOGIC_WIDTH - 36, 570};
+    ND_LabelLayout labels = {{{0}}, 0};
 
     roundedBoxRGBA(renderer, 18, 96, ND_LOGIC_WIDTH - 18, 666, 8, 3, 6, 9, 255);
     SDL_RenderSetClipRect(renderer, &clip);
@@ -477,8 +542,8 @@ static void draw_map(SDL_Renderer *renderer, const ND_Data *data)
     draw_range_rings(renderer, cx, cy, radius);
     draw_heading_scale(renderer, data, cx, cy, radius);
     draw_target_heading_bug(renderer, data, cx, cy, radius);
-    draw_route(renderer, data, cx, cy, radius);
-    draw_nearby_points(renderer, data, cx, cy, radius);
+    draw_route(renderer, data, cx, cy, radius, &labels);
+    draw_nearby_points(renderer, data, cx, cy, radius, &labels);
 
     thickLineRGBA(renderer, cx, cy - radius + 32, cx, cy - 42, 2, 255, 255, 255, 240);
     draw_plane_symbol(renderer, cx, cy);

@@ -18,6 +18,7 @@ typedef struct
     TTF_Font *font_large;
     int window_width;
     int window_height;
+    int vsync_enabled;
     SDL_Rect render_rect;
 } EICAS2_UI;
 

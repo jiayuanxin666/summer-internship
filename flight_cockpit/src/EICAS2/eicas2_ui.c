@@ -213,7 +213,7 @@ static void draw_half_gauge(EICAS2_UI *ui, int cx, int cy, int radius,
     for (int i = 0; i <= 10; ++i) {
         float a = (205.0f + (float)i * 13.0f) * EICAS2_PI / 180.0f;
         int major = (i % 5) == 0;
-        int numbered = (i % 2) == 0;
+        int numbered = (i % 5) == 0;
         int x1 = iroundf_local((float)cx + cosf(a) * (float)(radius - (major ? 22 : 14)));
         int y1 = iroundf_local((float)cy + sinf(a) * (float)(radius - (major ? 22 : 14)));
         int x2 = iroundf_local((float)cx + cosf(a) * (float)radius);
@@ -221,8 +221,8 @@ static void draw_half_gauge(EICAS2_UI *ui, int cx, int cy, int radius,
         lineRGBA(renderer, x1, y1, x2, y2, 220, 230, 235, 255);
         if (numbered) {
             int label_value = iroundf_local(max_value * (float)i / 10.0f);
-            int tx = iroundf_local((float)cx + cosf(a) * (float)(radius - 38));
-            int ty = iroundf_local((float)cy + sinf(a) * (float)(radius - 38)) - 7;
+            int tx = iroundf_local((float)cx + cosf(a) * (float)(radius - 30));
+            int ty = iroundf_local((float)cy + sinf(a) * (float)(radius - 30)) - 7;
             snprintf(text, sizeof(text), "%d", label_value);
             draw_ttf_text_center(renderer, ui->font_small, tx, ty, text, color_aux());
         }
@@ -264,20 +264,34 @@ static void draw_value_box(EICAS2_UI *ui, int cx, int y, float value,
 static void draw_threshold_marks(EICAS2_UI *ui, int cx, int y, const char *kind)
 {
     SDL_Renderer *renderer = ui->renderer;
-    int x1 = cx - 82;
-    int x2 = cx - 58;
+    int left = cx - 68;
+    int right = cx + 68;
+    int bar_y = y + 39;
+    float max_value = 1.0f;
+
+    lineRGBA(renderer, left, bar_y, right, bar_y, 55, 65, 75, 255);
 
     if (strcmp(kind, "press") == 0) {
-        lineRGBA(renderer, x1, y + 23, x2, y + 23, 255, 170, 60, 255);
-        draw_ttf_text_center(renderer, ui->font_small, x1 - 14, y + 14, "15", color_warning());
-        lineRGBA(renderer, x1, y + 30, x2, y + 30, 255, 70, 70, 255);
-        draw_ttf_text_center(renderer, ui->font_small, x1 - 10, y + 30, "0", color_danger());
+        int zero_x;
+        int warn_x;
+        max_value = 150.0f;
+        zero_x = left;
+        warn_x = left + iroundf_local(15.0f / max_value * (float)(right - left));
+        lineRGBA(renderer, zero_x, bar_y - 5, zero_x, bar_y + 5, 255, 70, 70, 255);
+        lineRGBA(renderer, warn_x, bar_y - 5, warn_x, bar_y + 5, 255, 170, 60, 255);
+        draw_ttf_text_center(renderer, ui->font_small, warn_x, bar_y + 5, "15", color_warning());
     } else if (strcmp(kind, "temp") == 0) {
-        lineRGBA(renderer, x1, y + 4, x2, y + 4, 255, 70, 70, 255);
-        draw_ttf_text_center(renderer, ui->font_small, x1 - 16, y + 2, "100", color_danger());
+        int danger_x;
+        max_value = 180.0f;
+        danger_x = left + iroundf_local(100.0f / max_value * (float)(right - left));
+        lineRGBA(renderer, danger_x, bar_y - 5, danger_x, bar_y + 5, 255, 70, 70, 255);
+        draw_ttf_text_center(renderer, ui->font_small, danger_x, bar_y + 5, "100", color_danger());
     } else if (strcmp(kind, "vib") == 0) {
-        lineRGBA(renderer, x1, y + 10, x2, y + 10, 255, 170, 60, 255);
-        draw_ttf_text_center(renderer, ui->font_small, x1 - 12, y + 6, "80", color_warning());
+        int warning_x;
+        max_value = 10.0f;
+        warning_x = left + iroundf_local(8.0f / max_value * (float)(right - left));
+        lineRGBA(renderer, warning_x, bar_y - 5, warning_x, bar_y + 5, 255, 170, 60, 255);
+        draw_ttf_text_center(renderer, ui->font_small, warning_x, bar_y + 5, "8", color_warning());
     }
 }
 
@@ -317,6 +331,34 @@ static void draw_status(EICAS2_UI *ui, const EICAS2_Data *data)
     draw_ttf_text(ui->renderer, ui->font_small, 18, 704, text, color_aux());
 }
 
+static void alert_text(unsigned int alerts, char *text, size_t size)
+{
+    const char *separator = "";
+    text[0] = '\0';
+#define APPEND_ALERT(flag, label) do { if (alerts & (flag)) { \
+    snprintf(text + strlen(text), size - strlen(text), "%s%s", separator, (label)); \
+    separator = "/"; } } while (0)
+    APPEND_ALERT(EICAS2_ALERT_OIL_PRESS_LOW, "OIL PRESS");
+    APPEND_ALERT(EICAS2_ALERT_OIL_TEMP_HIGH, "OIL TEMP");
+    APPEND_ALERT(EICAS2_ALERT_VIB_HIGH, "VIB");
+#undef APPEND_ALERT
+    if (!text[0]) snprintf(text, size, "NORMAL");
+}
+
+static void draw_alerts(EICAS2_UI *ui, const EICAS2_Data *data)
+{
+    char left_alerts[48];
+    char right_alerts[48];
+    alert_text(data->alert_left, left_alerts, sizeof(left_alerts));
+    alert_text(data->alert_right, right_alerts, sizeof(right_alerts));
+    draw_ttf_text_center(ui->renderer, ui->font_small, 205, 674,
+                         left_alerts,
+                         data->alert_left ? color_warning() : color_aux());
+    draw_ttf_text_center(ui->renderer, ui->font_small, 540, 674,
+                         right_alerts,
+                         data->alert_right ? color_warning() : color_aux());
+}
+
 int EICAS2_UI_Init(EICAS2_UI *ui)
 {
     if (!ui) {
@@ -339,6 +381,13 @@ int EICAS2_UI_Init(EICAS2_UI *ui)
                                       SDL_RENDERER_ACCELERATED |
                                       SDL_RENDERER_PRESENTVSYNC |
                                       SDL_RENDERER_TARGETTEXTURE);
+    ui->vsync_enabled = ui->renderer != NULL;
+    if (!ui->renderer) {
+        ui->renderer = SDL_CreateRenderer(ui->window, -1,
+                                          SDL_RENDERER_ACCELERATED |
+                                          SDL_RENDERER_TARGETTEXTURE);
+        ui->vsync_enabled = 0;
+    }
     if (!ui->renderer) {
         printf("EICAS2 renderer creation failed: %s\n", SDL_GetError());
         EICAS2_UI_Destroy(ui);
@@ -408,6 +457,7 @@ void EICAS2_UI_Render(EICAS2_UI *ui, const EICAS2_Data *data)
 
     draw_ttf_text_center(ui->renderer, ui->font_small, 205, 642, "LEFT ENGINE", color_aux());
     draw_ttf_text_center(ui->renderer, ui->font_small, 540, 642, "RIGHT ENGINE", color_aux());
+    draw_alerts(ui, data);
     draw_status(ui, data);
 
     rectangleRGBA(ui->renderer, 0, 0, EICAS2_LOGIC_WIDTH - 1, EICAS2_LOGIC_HEIGHT - 1,

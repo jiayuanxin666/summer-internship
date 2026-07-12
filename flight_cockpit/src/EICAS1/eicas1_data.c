@@ -11,6 +11,12 @@
 static FILE *g_data_file = NULL;
 static int g_file_checked = 0;
 static int g_frame = 0;
+static int g_parse_failures = 0;
+
+static float finite_or(float value, float fallback)
+{
+    return isfinite(value) ? value : fallback;
+}
 
 static float clampf_local(float value, float min_value, float max_value)
 {
@@ -60,16 +66,24 @@ static void normalize_data(EICAS1_Data *data)
         return;
     }
 
-    data->tat = clampf_local(data->tat, -80.0f, 80.0f);
-    data->n1_left = clampf_local(data->n1_left, 0.0f, 110.0f);
-    data->n1_right = clampf_local(data->n1_right, 0.0f, 110.0f);
-    data->egt_left = clampf_local(data->egt_left, 0.0f, 1100.0f);
-    data->egt_right = clampf_local(data->egt_right, 0.0f, 1100.0f);
-    data->ff_left = clampf_local(data->ff_left, 0.0f, 99.9f);
-    data->ff_right = clampf_local(data->ff_right, 0.0f, 99.9f);
-    data->fuel_center = clampf_local(data->fuel_center, 0.0f, 999.9f);
-    data->fuel_left = clampf_local(data->fuel_left, 0.0f, 999.9f);
-    data->fuel_right = clampf_local(data->fuel_right, 0.0f, 999.9f);
+    data->tat = clampf_local(finite_or(data->tat, 0.0f), -80.0f, 80.0f);
+    data->n1_left = clampf_local(finite_or(data->n1_left, 0.0f), 0.0f, 110.0f);
+    data->n1_right = clampf_local(finite_or(data->n1_right, 0.0f), 0.0f, 110.0f);
+    data->egt_left = clampf_local(finite_or(data->egt_left, 0.0f), 0.0f, 1100.0f);
+    data->egt_right = clampf_local(finite_or(data->egt_right, 0.0f), 0.0f, 1100.0f);
+    data->ff_left = clampf_local(finite_or(data->ff_left, 0.0f), 0.0f, 99.9f);
+    data->ff_right = clampf_local(finite_or(data->ff_right, 0.0f), 0.0f, 99.9f);
+    data->fuel_center = clampf_local(finite_or(data->fuel_center, 0.0f), 0.0f, 999.9f);
+    data->fuel_left = clampf_local(finite_or(data->fuel_left, 0.0f), 0.0f, 999.9f);
+    data->fuel_right = clampf_local(finite_or(data->fuel_right, 0.0f), 0.0f, 999.9f);
+    data->alert_left = (data->n1_left > 100.0f ? EICAS1_ALERT_N1_HIGH : 0u) |
+                       (data->egt_left >= 900.0f ? EICAS1_ALERT_EGT_HIGH : 0u) |
+                       (data->ff_left < 0.5f ? EICAS1_ALERT_FF_LOW : 0u) |
+                       (data->fuel_left < 1.0f ? EICAS1_ALERT_FUEL_LOW : 0u);
+    data->alert_right = (data->n1_right > 100.0f ? EICAS1_ALERT_N1_HIGH : 0u) |
+                        (data->egt_right >= 900.0f ? EICAS1_ALERT_EGT_HIGH : 0u) |
+                        (data->ff_right < 0.5f ? EICAS1_ALERT_FF_LOW : 0u) |
+                        (data->fuel_right < 1.0f ? EICAS1_ALERT_FUEL_LOW : 0u);
     data->valid = 1;
 }
 
@@ -150,15 +164,13 @@ int EICAS1_Data_LoadNextFrame(EICAS1_Data *data)
         return 1;
     }
 
-    if (!fgets(line, sizeof(line), g_data_file)) {
-        fseek(g_data_file, 0, SEEK_SET);
+    for (int attempt = 0; attempt < 8; ++attempt) {
         if (!fgets(line, sizeof(line), g_data_file)) {
-            fill_internal_frame(data);
-            return 1;
+            clearerr(g_data_file);
+            fseek(g_data_file, 0, SEEK_SET);
+            continue;
         }
-    }
-
-    if (sscanf(line, " %f , %f , %f , %f , %f , %f , %f , %f , %f , %f",
+        if (sscanf(line, " %f , %f , %f , %f , %f , %f , %f , %f , %f , %f",
                &tat, &n1_left, &n1_right, &egt_left, &egt_right,
                &ff_left, &ff_right, &fuel_left, &fuel_center, &fuel_right) == 10) {
         data->tat = tat;
@@ -174,9 +186,11 @@ int EICAS1_Data_LoadNextFrame(EICAS1_Data *data)
         data->fuel_right = fuel_right / 1000.0f;
         data->data_source = EICAS1_DATA_SOURCE_FILE;
         normalize_data(data);
+        g_parse_failures = 0;
         return 1;
+        }
     }
-
+    ++g_parse_failures;
     fill_internal_frame(data);
     return 1;
 }
@@ -210,6 +224,8 @@ void EICAS1_Data_Close(void)
         g_data_file = NULL;
     }
     g_file_checked = 0;
+    g_frame = 0;
+    g_parse_failures = 0;
 }
 
 #ifdef ENABLE_XPLANE
@@ -258,26 +274,31 @@ int EICAS1_XPlane_FetchData(EICAS1_Data *data)
         "sim/cockpit2/engine/indicators/fuel_flow_kg_sec",
         "sim/flightmodel/weight/m_fuel"
     };
-    float values[EICAS1_XPLANE_DREF_COUNT][8];
+    float tat[1] = {0};
+    float n1[8] = {0};
+    float egt[8] = {0};
+    float ff[8] = {0};
+    float fuel[9] = {0};
+    float *values[] = {tat, n1, egt, ff, fuel};
+    const int capacities[] = {1, 8, 8, 8, 9};
 
     if (!data || !g_xpc_open) {
         return 0;
     }
 
-    if (!getDREFs(g_xpc_socket, drefs, EICAS1_XPLANE_DREF_COUNT, values)) {
+    if (!getDREFsSized(g_xpc_socket, drefs, capacities,
+                       EICAS1_XPLANE_DREF_COUNT, values)) {
         return 0;
     }
 
-    data->tat = values[0][0];
-    data->n1_left = values[1][0];
-    data->n1_right = values[1][1];
-    data->egt_left = values[2][0];
-    data->egt_right = values[2][1];
-    data->ff_left = values[3][0] * EICAS1_KGSEC_TO_KLBH;
-    data->ff_right = values[3][1] * EICAS1_KGSEC_TO_KLBH;
-    data->fuel_left = values[4][0] * EICAS1_KG_TO_KLB;
-    data->fuel_center = values[4][1] * EICAS1_KG_TO_KLB;
-    data->fuel_right = values[4][2] * EICAS1_KG_TO_KLB;
+    data->tat = tat[0];
+    data->n1_left = n1[0]; data->n1_right = n1[1];
+    data->egt_left = egt[0]; data->egt_right = egt[1];
+    data->ff_left = ff[0] * EICAS1_KGSEC_TO_KLBH;
+    data->ff_right = ff[1] * EICAS1_KGSEC_TO_KLBH;
+    data->fuel_left = fuel[0] * EICAS1_KG_TO_KLB;
+    data->fuel_center = fuel[1] * EICAS1_KG_TO_KLB;
+    data->fuel_right = fuel[2] * EICAS1_KG_TO_KLB;
     data->data_source = EICAS1_DATA_SOURCE_XPLANE;
     normalize_data(data);
     return 1;

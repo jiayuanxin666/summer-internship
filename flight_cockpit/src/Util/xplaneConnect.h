@@ -24,6 +24,8 @@ typedef enum {
 XPCSocket openUDP(const char *xpIP);
 XPCSocket aopenUDP(const char *xpIP, unsigned short xpPort, unsigned short port);
 int getDREFs(XPCSocket sock, const char **drefs, int count, float values[][8]);
+int getDREFsSized(XPCSocket sock, const char **drefs, const int *capacities,
+                  int count, float **values);
 void closeUDP(XPCSocket sock);
 int XPCSocket_IsOpen(XPCSocket sock);
 XPCError XPC_GetLastError(void);

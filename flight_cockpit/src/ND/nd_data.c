@@ -582,7 +582,6 @@ void ND_Data_UpdateNavigation(ND_Data *data)
     }
 
     ND_Data_LoadStaticResources();
-    copy_route_to_data(data);
 
     for (int i = 0; i < data->route_count; ++i) {
         update_point_geometry(data, &data->route[i]);

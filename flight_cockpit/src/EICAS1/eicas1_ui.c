@@ -199,7 +199,7 @@ static void draw_tat(EICAS1_UI *ui, const EICAS1_Data *data)
     SDL_Renderer *renderer = ui->renderer;
 
     draw_ttf_text_center(renderer, ui->font_small, 372, 18, "TAT", color_label());
-    snprintf(text, sizeof(text), "%+03d C", iroundf_local(data->tat));
+    snprintf(text, sizeof(text), "%+05.1f C", data->tat);
     draw_ttf_text_center(renderer, ui->font_medium, 372, 38, text, color_main());
 }
 
@@ -235,7 +235,7 @@ static void draw_half_gauge(EICAS1_UI *ui, int cx, int cy, int radius,
     for (int i = 0; i <= 10; ++i) {
         float a = (205.0f + (float)i * 13.0f) * EICAS1_PI / 180.0f;
         int major = (i % 5) == 0;
-        int numbered = (i % 2) == 0;
+        int numbered = (i % 5) == 0;
         int x1 = iroundf_local((float)cx + cosf(a) * (float)(radius - (major ? 22 : 14)));
         int y1 = iroundf_local((float)cy + sinf(a) * (float)(radius - (major ? 22 : 14)));
         int x2 = iroundf_local((float)cx + cosf(a) * (float)radius);
@@ -243,8 +243,8 @@ static void draw_half_gauge(EICAS1_UI *ui, int cx, int cy, int radius,
         lineRGBA(renderer, x1, y1, x2, y2, 220, 230, 235, 255);
         if (numbered) {
             int label_value = iroundf_local(max_value * (float)i / 10.0f);
-            int tx = iroundf_local((float)cx + cosf(a) * (float)(radius - 38));
-            int ty = iroundf_local((float)cy + sinf(a) * (float)(radius - 38)) - 7;
+            int tx = iroundf_local((float)cx + cosf(a) * (float)(radius - 30));
+            int ty = iroundf_local((float)cy + sinf(a) * (float)(radius - 30)) - 7;
             snprintf(text, sizeof(text), "%d", label_value);
             draw_ttf_text_center(renderer, ui->font_small, tx, ty, text, color_aux());
         }
@@ -301,9 +301,29 @@ static void draw_engine_message(EICAS1_UI *ui, int cx, int y, const char *messag
     }
 }
 
-static void draw_engine_status(EICAS1_UI *ui)
+static void engine_status_text(unsigned int alerts, char *text, size_t size)
+{
+    const char *separator = "";
+    text[0] = '\0';
+#define APPEND_ALERT(flag, label) do { if (alerts & (flag)) { \
+    snprintf(text + strlen(text), size - strlen(text), "%s%s", separator, (label)); \
+    separator = "/"; } } while (0)
+    APPEND_ALERT(EICAS1_ALERT_N1_HIGH, "N1");
+    APPEND_ALERT(EICAS1_ALERT_EGT_HIGH, "EGT");
+    APPEND_ALERT(EICAS1_ALERT_FF_LOW, "FF");
+    APPEND_ALERT(EICAS1_ALERT_FUEL_LOW, "FUEL");
+#undef APPEND_ALERT
+    if (!text[0]) snprintf(text, size, "NORMAL");
+}
+
+static void draw_engine_status(EICAS1_UI *ui, const EICAS1_Data *data)
 {
     SDL_Renderer *renderer = ui->renderer;
+    char left_status[32];
+    char right_status[32];
+
+    engine_status_text(data->alert_left, left_status, sizeof(left_status));
+    engine_status_text(data->alert_right, right_status, sizeof(right_status));
 
     roundedBoxRGBA(renderer, 552, 82, 626, 168, 5, 5, 8, 11, 220);
     roundedBoxRGBA(renderer, 638, 82, 712, 168, 5, 5, 8, 11, 220);
@@ -312,13 +332,11 @@ static void draw_engine_status(EICAS1_UI *ui)
     draw_ttf_text_center(renderer, ui->font_small, 589, 98, "ENG1", color_label());
     draw_ttf_text_center(renderer, ui->font_small, 675, 98, "ENG2", color_label());
     lineRGBA(renderer, 560, 122, 618, 122, 70, 82, 94, 255);
-    lineRGBA(renderer, 560, 144, 618, 144, 70, 82, 94, 255);
     lineRGBA(renderer, 646, 122, 704, 122, 70, 82, 94, 255);
-    lineRGBA(renderer, 646, 144, 704, 144, 70, 82, 94, 255);
-    rectangleRGBA(renderer, 570, 126, 608, 150, 90, 100, 110, 255);
-    rectangleRGBA(renderer, 656, 126, 694, 150, 90, 100, 110, 255);
-    draw_engine_message(ui, 589, 128, "", color_warning());
-    draw_engine_message(ui, 675, 128, "", color_warning());
+    draw_engine_message(ui, 589, 132, left_status,
+                        data->alert_left ? color_warning() : color_main());
+    draw_engine_message(ui, 675, 132, right_status,
+                        data->alert_right ? color_warning() : color_main());
 }
 
 static void draw_fuel(EICAS1_UI *ui, const EICAS1_Data *data)
@@ -379,6 +397,13 @@ int EICAS1_UI_Init(EICAS1_UI *ui)
                                       SDL_RENDERER_ACCELERATED |
                                       SDL_RENDERER_PRESENTVSYNC |
                                       SDL_RENDERER_TARGETTEXTURE);
+    ui->vsync_enabled = ui->renderer != NULL;
+    if (!ui->renderer) {
+        ui->renderer = SDL_CreateRenderer(ui->window, -1,
+                                          SDL_RENDERER_ACCELERATED |
+                                          SDL_RENDERER_TARGETTEXTURE);
+        ui->vsync_enabled = 0;
+    }
     if (!ui->renderer) {
         printf("EICAS1 renderer creation failed: %s\n", SDL_GetError());
         EICAS1_UI_Destroy(ui);
@@ -442,7 +467,7 @@ void EICAS1_UI_Render(EICAS1_UI *ui, const EICAS1_Data *data)
     draw_half_gauge(ui, 185, 374, 72, data->egt_left, 1000.0f, "EGT C", "%04.0f");
     draw_half_gauge(ui, 380, 374, 72, data->egt_right, 1000.0f, "EGT C", "%04.0f");
     draw_ff(ui, data);
-    draw_engine_status(ui);
+    draw_engine_status(ui, data);
     draw_fuel(ui, data);
     draw_status(ui, data);
 

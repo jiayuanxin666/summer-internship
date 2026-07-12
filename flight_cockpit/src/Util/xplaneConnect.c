@@ -86,7 +86,8 @@ XPCSocket aopenUDP(const char *ip, unsigned short xp_port, unsigned short local_
     return sock;
 }
 
-int getDREFs(XPCSocket sock, const char **drefs, int count, float values[][8]) {
+int getDREFsSized(XPCSocket sock, const char **drefs, const int *capacities,
+                  int count, float **values) {
     unsigned char request[XPC_PACKET_SIZE] = {0};
     unsigned char response[XPC_PACKET_SIZE];
     struct sockaddr_in response_addr;
@@ -95,7 +96,8 @@ int getDREFs(XPCSocket sock, const char **drefs, int count, float values[][8]) {
     int received;
 
     set_error(XPC_ERROR_NONE);
-    if (!XPCSocket_IsOpen(sock) || !drefs || !values || count <= 0 || count > XPC_MAX_DREFS) {
+    if (!XPCSocket_IsOpen(sock) || !drefs || !capacities || !values ||
+        count <= 0 || count > XPC_MAX_DREFS) {
         set_error(XPC_ERROR_INVALID_ARGUMENT); return 0;
     }
     memcpy(request, "GETD", 4);
@@ -103,7 +105,9 @@ int getDREFs(XPCSocket sock, const char **drefs, int count, float values[][8]) {
     request[5] = (unsigned char)count;
     for (int i = 0; i < count; ++i) {
         size_t len;
-        if (!drefs[i]) { set_error(XPC_ERROR_INVALID_ARGUMENT); return 0; }
+        if (!drefs[i] || !values[i] || capacities[i] <= 0) {
+            set_error(XPC_ERROR_INVALID_ARGUMENT); return 0;
+        }
         len = strlen(drefs[i]);
         if (len == 0 || len > 255 || len + 1 > sizeof(request) - cursor) {
             set_error(XPC_ERROR_INVALID_ARGUMENT); return 0;
@@ -111,7 +115,7 @@ int getDREFs(XPCSocket sock, const char **drefs, int count, float values[][8]) {
         request[cursor++] = (unsigned char)len;
         memcpy(request + cursor, drefs[i], len);
         cursor += len;
-        memset(values[i], 0, XPC_VALUE_COUNT * sizeof(float));
+        memset(values[i], 0, (size_t)capacities[i] * sizeof(float));
     }
     if (sendto(sock.socket_fd, (const char *)request, (int)cursor, 0,
                (const struct sockaddr *)&sock.xplane_addr, sizeof(sock.xplane_addr)) == SOCKET_ERROR) {
@@ -170,11 +174,26 @@ int getDREFs(XPCSocket sock, const char **drefs, int count, float values[][8]) {
                     received, cursor + value_bytes);
             set_error(XPC_ERROR_RESPONSE_LENGTH); return 0;
         }
-        copy_count = value_count > XPC_VALUE_COUNT ? XPC_VALUE_COUNT : value_count;
+        copy_count = value_count > (unsigned int)capacities[i]
+                         ? (size_t)capacities[i] : (size_t)value_count;
         memcpy(values[i], response + cursor, copy_count * sizeof(float));
         cursor += value_bytes;
     }
     return 1;
+}
+
+int getDREFs(XPCSocket sock, const char **drefs, int count, float values[][8]) {
+    int capacities[XPC_MAX_DREFS];
+    float *outputs[XPC_MAX_DREFS];
+    if (!values || count <= 0 || count > XPC_MAX_DREFS) {
+        set_error(XPC_ERROR_INVALID_ARGUMENT);
+        return 0;
+    }
+    for (int i = 0; i < count; ++i) {
+        capacities[i] = XPC_VALUE_COUNT;
+        outputs[i] = values[i];
+    }
+    return getDREFsSized(sock, drefs, capacities, count, outputs);
 }
 
 void closeUDP(XPCSocket sock) {

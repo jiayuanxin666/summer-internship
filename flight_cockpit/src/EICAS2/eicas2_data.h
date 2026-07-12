@@ -5,6 +5,10 @@
 #define EICAS2_DATA_SOURCE_FILE 1
 #define EICAS2_DATA_SOURCE_XPLANE 2
 
+#define EICAS2_ALERT_OIL_PRESS_LOW 0x01u
+#define EICAS2_ALERT_OIL_TEMP_HIGH 0x02u
+#define EICAS2_ALERT_VIB_HIGH      0x04u
+
 typedef struct
 {
     float n2_left;
@@ -21,6 +25,8 @@ typedef struct
     float vib_right;
     int valid;
     int data_source;
+    unsigned int alert_left;
+    unsigned int alert_right;
 } EICAS2_Data;
 
 void EICAS2_Data_Init(EICAS2_Data *data);

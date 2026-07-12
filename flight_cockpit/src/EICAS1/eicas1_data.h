@@ -5,6 +5,11 @@
 #define EICAS1_DATA_SOURCE_FILE 1
 #define EICAS1_DATA_SOURCE_XPLANE 2
 
+#define EICAS1_ALERT_N1_HIGH  0x01u
+#define EICAS1_ALERT_EGT_HIGH 0x02u
+#define EICAS1_ALERT_FF_LOW   0x04u
+#define EICAS1_ALERT_FUEL_LOW 0x08u
+
 typedef struct
 {
     float tat;
@@ -19,6 +24,8 @@ typedef struct
     float fuel_right;
     int valid;
     int data_source;
+    unsigned int alert_left;
+    unsigned int alert_right;
 } EICAS1_Data;
 
 void EICAS1_Data_Init(EICAS1_Data *data);

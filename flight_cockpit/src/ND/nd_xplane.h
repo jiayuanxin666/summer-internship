@@ -11,8 +11,10 @@
  * 0. sim/flightmodel/position/latitude
  * 1. sim/flightmodel/position/longitude
  * 2. sim/flightmodel/position/mag_psi
- * 3. sim/flightmodel/position/true_airspeed
- * 4. sim/flightmodel/position/groundspeed
+ * 3. sim/flightmodel/position/hpath
+ * 4. sim/cockpit/autopilot/heading_mag
+ * 5. sim/flightmodel/position/true_airspeed
+ * 6. sim/flightmodel/position/groundspeed
  */
 
 #ifdef ENABLE_XPLANE

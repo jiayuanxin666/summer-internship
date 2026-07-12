@@ -11,6 +11,12 @@
 static FILE *g_data_file = NULL;
 static int g_file_checked = 0;
 static int g_frame = 0;
+static int g_parse_failures = 0;
+
+static float finite_or(float value, float fallback)
+{
+    return isfinite(value) ? value : fallback;
+}
 
 static float clampf_local(float value, float min_value, float max_value)
 {
@@ -60,18 +66,24 @@ static void normalize_data(EICAS2_Data *data)
         return;
     }
 
-    data->n2_left = clampf_local(data->n2_left, 0.0f, 110.0f);
-    data->n2_right = clampf_local(data->n2_right, 0.0f, 110.0f);
-    data->ff_left = clampf_local(data->ff_left, 0.0f, 99.9f);
-    data->ff_right = clampf_local(data->ff_right, 0.0f, 99.9f);
-    data->oil_press_left = clampf_local(data->oil_press_left, 0.0f, 120.0f);
-    data->oil_press_right = clampf_local(data->oil_press_right, 0.0f, 120.0f);
-    data->oil_temp_left = clampf_local(data->oil_temp_left, 0.0f, 180.0f);
-    data->oil_temp_right = clampf_local(data->oil_temp_right, 0.0f, 180.0f);
-    data->oil_qty_left = clampf_local(data->oil_qty_left, 0.0f, 25.0f);
-    data->oil_qty_right = clampf_local(data->oil_qty_right, 0.0f, 25.0f);
-    data->vib_left = clampf_local(data->vib_left, 0.0f, 10.0f);
-    data->vib_right = clampf_local(data->vib_right, 0.0f, 10.0f);
+    data->n2_left = clampf_local(finite_or(data->n2_left, 0.0f), 0.0f, 110.0f);
+    data->n2_right = clampf_local(finite_or(data->n2_right, 0.0f), 0.0f, 110.0f);
+    data->ff_left = clampf_local(finite_or(data->ff_left, 0.0f), 0.0f, 99.9f);
+    data->ff_right = clampf_local(finite_or(data->ff_right, 0.0f), 0.0f, 99.9f);
+    data->oil_press_left = clampf_local(finite_or(data->oil_press_left, 0.0f), 0.0f, 150.0f);
+    data->oil_press_right = clampf_local(finite_or(data->oil_press_right, 0.0f), 0.0f, 150.0f);
+    data->oil_temp_left = clampf_local(finite_or(data->oil_temp_left, 0.0f), 0.0f, 180.0f);
+    data->oil_temp_right = clampf_local(finite_or(data->oil_temp_right, 0.0f), 0.0f, 180.0f);
+    data->oil_qty_left = clampf_local(finite_or(data->oil_qty_left, 0.0f), 0.0f, 25.0f);
+    data->oil_qty_right = clampf_local(finite_or(data->oil_qty_right, 0.0f), 0.0f, 25.0f);
+    data->vib_left = clampf_local(finite_or(data->vib_left, 0.0f), 0.0f, 10.0f);
+    data->vib_right = clampf_local(finite_or(data->vib_right, 0.0f), 0.0f, 10.0f);
+    data->alert_left = (data->oil_press_left <= 15.0f ? EICAS2_ALERT_OIL_PRESS_LOW : 0u) |
+                       (data->oil_temp_left >= 100.0f ? EICAS2_ALERT_OIL_TEMP_HIGH : 0u) |
+                       (data->vib_left >= 8.0f ? EICAS2_ALERT_VIB_HIGH : 0u);
+    data->alert_right = (data->oil_press_right <= 15.0f ? EICAS2_ALERT_OIL_PRESS_LOW : 0u) |
+                        (data->oil_temp_right >= 100.0f ? EICAS2_ALERT_OIL_TEMP_HIGH : 0u) |
+                        (data->vib_right >= 8.0f ? EICAS2_ALERT_VIB_HIGH : 0u);
     data->valid = 1;
 }
 
@@ -147,15 +159,13 @@ int EICAS2_Data_LoadNextFrame(EICAS2_Data *data)
         return 1;
     }
 
-    if (!fgets(line, sizeof(line), g_data_file)) {
-        fseek(g_data_file, 0, SEEK_SET);
+    for (int attempt = 0; attempt < 8; ++attempt) {
         if (!fgets(line, sizeof(line), g_data_file)) {
-            fill_internal_frame(data);
-            return 1;
+            clearerr(g_data_file);
+            fseek(g_data_file, 0, SEEK_SET);
+            continue;
         }
-    }
-
-    if (sscanf(line, " %f , %f , %f , %f , %f , %f , %f , %f , %f , %f , %f , %f",
+        if (sscanf(line, " %f , %f , %f , %f , %f , %f , %f , %f , %f , %f , %f , %f",
                &values[0], &values[1], &values[2], &values[3], &values[4], &values[5],
                &values[6], &values[7], &values[8], &values[9], &values[10], &values[11]) == 12) {
         data->n2_left = values[0];
@@ -172,9 +182,11 @@ int EICAS2_Data_LoadNextFrame(EICAS2_Data *data)
         data->vib_right = values[11];
         data->data_source = EICAS2_DATA_SOURCE_FILE;
         normalize_data(data);
+        g_parse_failures = 0;
         return 1;
+        }
     }
-
+    ++g_parse_failures;
     fill_internal_frame(data);
     return 1;
 }
@@ -210,11 +222,13 @@ void EICAS2_Data_Close(void)
         g_data_file = NULL;
     }
     g_file_checked = 0;
+    g_frame = 0;
+    g_parse_failures = 0;
 }
 
 #ifdef ENABLE_XPLANE
 
-#define EICAS2_XPLANE_DREF_COUNT 5
+#define EICAS2_XPLANE_DREF_COUNT 6
 #define EICAS2_KGSEC_TO_KLBH 7.936632f
 #define EICAS2_OIL_QTY_FACTOR 18.889f
 
@@ -256,7 +270,8 @@ int EICAS2_XPlane_FetchData(EICAS2_Data *data)
         "sim/cockpit2/engine/indicators/fuel_flow_kg_sec",
         "sim/cockpit2/engine/indicators/oil_pressure_psi",
         "sim/cockpit2/engine/indicators/oil_temperature_deg_C",
-        "sim/flightmodel/engine/ENGN_oil_quan"
+        "sim/flightmodel/engine/ENGN_oil_quan",
+        "sim/cockpit2/engine/indicators/vibration_ratio"
     };
     float values[EICAS2_XPLANE_DREF_COUNT][8];
 
@@ -276,10 +291,11 @@ int EICAS2_XPlane_FetchData(EICAS2_Data *data)
     data->oil_press_right = values[2][1];
     data->oil_temp_left = values[3][0];
     data->oil_temp_right = values[3][1];
-    data->oil_qty_left = values[4][0] * EICAS2_OIL_QTY_FACTOR;
-    data->oil_qty_right = values[4][1] * EICAS2_OIL_QTY_FACTOR;
-    data->vib_left = 1.5f;
-    data->vib_right = 1.5f;
+    /* ENGN_oil_quan is seen as either 0..1 or 0..100 across aircraft. */
+    data->oil_qty_left = (values[4][0] > 1.5f ? values[4][0] / 100.0f : values[4][0]) * EICAS2_OIL_QTY_FACTOR;
+    data->oil_qty_right = (values[4][1] > 1.5f ? values[4][1] / 100.0f : values[4][1]) * EICAS2_OIL_QTY_FACTOR;
+    data->vib_left = values[5][0] * 10.0f;
+    data->vib_right = values[5][1] * 10.0f;
     data->data_source = EICAS2_DATA_SOURCE_XPLANE;
     normalize_data(data);
     return 1;

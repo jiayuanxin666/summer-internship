@@ -16,6 +16,7 @@
 #include <windows.h>
 
 static volatile int g_thread_exit = 0;
+static volatile int g_xplane_connected = 0;
 static int g_data_ready = 0;
 static ND_Data g_shared_data;
 static CRITICAL_SECTION g_data_lock;
@@ -23,15 +24,39 @@ static CRITICAL_SECTION g_data_lock;
 static DWORD WINAPI ND_DataThread(LPVOID param)
 {
     ND_Data local;
+    DWORD last_reconnect = 0;
+    int failed_reads = 0;
     (void)param;
 
     ND_Data_Init(&local);
     while (!g_thread_exit) {
+        if (!g_xplane_connected) {
+            DWORD now = GetTickCount();
+            if (last_reconnect == 0 || now - last_reconnect >= 2000) {
+                last_reconnect = now;
+                ND_XPlane_Close();
+                if (ND_XPlane_Open()) {
+                    g_xplane_connected = 1;
+                    failed_reads = 0;
+                    printf("ND X-Plane Connect enabled.\n");
+                }
+            }
+            Sleep(100);
+            continue;
+        }
+
         if (ND_XPlane_FetchData(&local)) {
+            failed_reads = 0;
             EnterCriticalSection(&g_data_lock);
             g_shared_data = local;
             g_data_ready = 1;
             LeaveCriticalSection(&g_data_lock);
+        } else if (++failed_reads >= 10) {
+            ND_XPlane_Close();
+            g_xplane_connected = 0;
+            failed_reads = 0;
+            last_reconnect = GetTickCount();
+            printf("ND X-Plane connection lost; retrying.\n");
         }
         Sleep(30);
     }
@@ -48,9 +73,10 @@ int main(int argc, char *argv[])
     SDL_Event event;
     int running = 1;
     RouteIPC *route_ipc = NULL;
+    RouteIPCData shared_route;
     unsigned int route_sequence = 0;
+    int shared_route_valid = 0;
 #ifdef ENABLE_XPLANE
-    int xplane_available = 0;
     HANDLE data_thread = NULL;
 #endif
 
@@ -86,22 +112,15 @@ int main(int argc, char *argv[])
     route_ipc = RouteIPC_Open(0);
 
 #ifdef ENABLE_XPLANE
-    xplane_available = ND_XPlane_Open();
-    if (xplane_available) {
-        InitializeCriticalSection(&g_data_lock);
-        g_shared_data = raw_data;
-        g_thread_exit = 0;
-        g_data_ready = 0;
-        data_thread = CreateThread(NULL, 0, ND_DataThread, NULL, 0, NULL);
-        if (data_thread) {
-            printf("ND X-Plane Connect enabled.\n");
-        } else {
-            xplane_available = 0;
-            DeleteCriticalSection(&g_data_lock);
-            printf("ND X-Plane thread creation failed; using file/simulation data.\n");
-        }
-    } else {
-        printf("ND X-Plane Connect unavailable; using file/simulation data.\n");
+    InitializeCriticalSection(&g_data_lock);
+    g_shared_data = raw_data;
+    g_thread_exit = 0;
+    g_xplane_connected = 0;
+    g_data_ready = 0;
+    data_thread = CreateThread(NULL, 0, ND_DataThread, NULL, 0, NULL);
+    if (!data_thread) {
+        DeleteCriticalSection(&g_data_lock);
+        printf("ND X-Plane thread creation failed; using file/simulation data.\n");
     }
 #endif
 
@@ -111,7 +130,7 @@ int main(int argc, char *argv[])
         }
 
 #ifdef ENABLE_XPLANE
-        if (xplane_available) {
+        if (data_thread && g_xplane_connected) {
             EnterCriticalSection(&g_data_lock);
             if (g_data_ready) {
                 raw_data = g_shared_data;
@@ -129,15 +148,20 @@ int main(int argc, char *argv[])
         if (route_ipc) {
             RouteIPCData shared;
             if (RouteIPC_Read(route_ipc, &shared, &route_sequence)) {
-                raw_data.route_count = shared.point_count > ND_MAX_ROUTE_POINTS ? ND_MAX_ROUTE_POINTS : shared.point_count;
+                shared_route = shared;
+                shared_route_valid = 1;
+            }
+        }
+
+        if (shared_route_valid) {
+                raw_data.route_count = shared_route.point_count > ND_MAX_ROUTE_POINTS ? ND_MAX_ROUTE_POINTS : shared_route.point_count;
                 for (int i = 0; i < raw_data.route_count; ++i) {
-                    snprintf(raw_data.route[i].ident, sizeof(raw_data.route[i].ident), "%s", shared.points[i].ident);
-                    raw_data.route[i].latitude = shared.points[i].latitude;
-                    raw_data.route[i].longitude = shared.points[i].longitude;
+                    snprintf(raw_data.route[i].ident, sizeof(raw_data.route[i].ident), "%s", shared_route.points[i].ident);
+                    raw_data.route[i].latitude = shared_route.points[i].latitude;
+                    raw_data.route[i].longitude = shared_route.points[i].longitude;
                     raw_data.route[i].type = ND_POINT_ROUTE;
                 }
                 ND_Data_UpdateNavigation(&raw_data);
-            }
         }
 
         ND_Data_Smooth(&display_data, &raw_data, 0.16f);
@@ -149,10 +173,10 @@ int main(int argc, char *argv[])
 #ifdef ENABLE_XPLANE
     if (data_thread) {
         g_thread_exit = 1;
-        WaitForSingleObject(data_thread, 1000);
+        WaitForSingleObject(data_thread, INFINITE);
         CloseHandle(data_thread);
-        DeleteCriticalSection(&g_data_lock);
     }
+    if (data_thread) DeleteCriticalSection(&g_data_lock);
     ND_XPlane_Close();
 #endif
 
