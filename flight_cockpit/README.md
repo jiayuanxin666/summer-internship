@@ -1,11 +1,10 @@
 # Flight Cockpit
 
-SDL2/C 实现的模块化飞行驾驶舱，包含 Cockpit、PFD、ND、EICAS、FMC、MAP，
-支持 X-Plane Connect、FMC→ND 共享航路和客舱声光报警。
+基于 SDL2 和 C17 的模块化飞行驾驶舱，包含 Cockpit、PFD、ND、EICAS、FMC 和 MAP。项目支持 X-Plane Connect、FMC 到 ND 的共享航路，以及驾驶舱声光告警。
 
-## 一键构建
+## 构建与测试
 
-在安装 MSYS2 MinGW64 依赖后运行：
+安装 MSYS2 MinGW64 依赖后，在项目根目录运行：
 
 ```powershell
 $env:PATH = 'D:\MSYS2\mingw64\bin;' + $env:PATH
@@ -18,8 +17,8 @@ ctest --test-dir build-cmake --output-on-failure
 
 ## 配置
 
-- 高德 Key：环境变量 `AMAP_API_KEY` 或本地文件 `assets/map.local.cfg`。
+- 高德地图 Key：使用环境变量 `AMAP_API_KEY`，或本地文件 `assets/map.local.cfg`。
 - X-Plane Connect：默认连接 `127.0.0.1:49009`。
-- FMC 航路通过 Windows 命名共享内存自动同步给 ND。
+- FMC 航路：通过 Windows 命名共享内存自动同步到 ND。
 
-本地密钥文件已加入 `.gitignore`，不要提交到版本库。
+本地密钥、构建产物、截图和诊断文件已加入 `.gitignore`，请勿提交到版本库。

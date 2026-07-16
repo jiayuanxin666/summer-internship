@@ -101,10 +101,14 @@ int FMC_Data_SetDescentSpeed(FMC_Data *data, const char *text);
 int FMC_Data_SetVpa(FMC_Data *data, const char *text);
 
 int FMC_Data_IsRouteReady(const FMC_Data *data);
+void FMC_Data_RefreshRouteExecState(FMC_Data *data);
 void FMC_Data_MarkModified(FMC_Data *data);
 void FMC_Data_MarkSynchronized(FMC_Data *data);
 
 const FMC_ProcedureCatalog *FMC_Data_GetProcedureCatalog(const FMC_Data *data, int arrival);
+const FMC_ProcedureCatalog *FMC_Data_GetProcedureCatalogForAirport(const char *ident);
+int FMC_Data_ProcedureCompatible(const FMC_ProcedureCatalog *catalog, int arrival,
+                                 int procedure_index, int runway_index);
 int FMC_Data_RunSelfTest(void);
 
 #endif

@@ -1,0 +1,572 @@
+﻿% !TeX program = xelatex
+% 编译建议：xelatex -> xelatex（目录与页码需编译两次）
+\documentclass[UTF8,zihao=-4,fontset=none]{ctexart}
+
+\usepackage[a4paper,top=2.5cm,bottom=2.4cm,left=2.6cm,right=2.6cm,headheight=15pt]{geometry}
+\usepackage{graphicx}
+\usepackage{booktabs,longtable,tabularx,array,multirow}
+\usepackage[table]{xcolor}
+\usepackage{enumitem}
+\usepackage{titlesec}
+\usepackage{fancyhdr}
+\usepackage{pdflscape}
+\usepackage{float}
+\usepackage{hyperref}
+
+\definecolor{Navy}{HTML}{17365D}
+\definecolor{Blue}{HTML}{2F5597}
+\definecolor{LightBlue}{HTML}{D9EAF7}
+\definecolor{SoftGray}{HTML}{F3F5F7}
+\definecolor{RuleGray}{HTML}{AAB4C0}
+\hypersetup{colorlinks=true,linkcolor=Navy,urlcolor=Blue,bookmarksnumbered=true,pdfauthor={贾元鑫},pdftitle={航空驾驶舱模拟系统项目需求分析报告}}
+
+\setmainfont{Times New Roman}
+\IfFontExistsTF{SimSun}
+  {\setCJKmainfont{SimSun}[AutoFakeBold=2.2]}
+  {\setCJKmainfont{FandolSong-Regular}}
+\IfFontExistsTF{Microsoft YaHei}
+  {\setCJKsansfont{Microsoft YaHei}[AutoFakeBold=2.2]}
+  {\setCJKsansfont{FandolHei-Regular}}
+\setlength{\parindent}{2em}
+\setlength{\parskip}{0.18em}
+\linespread{1.42}
+\setlist{nosep,leftmargin=2.2em}
+\setlength{\tabcolsep}{5pt}
+\renewcommand{\arraystretch}{1.35}
+\setlength{\arrayrulewidth}{0.45pt}
+\arrayrulecolor{black}
+
+\titleformat{\section}{\sffamily\bfseries\zihao{3}\color{Navy}}{\thesection}{0.7em}{}[\vspace{2pt}\color{RuleGray}\titlerule]
+\titleformat{\subsection}{\sffamily\bfseries\zihao{4}\color{Blue}}{\thesubsection}{0.6em}{}
+\titleformat{\subsubsection}{\sffamily\bfseries\zihao{-4}}{\thesubsubsection}{0.55em}{}
+\titlespacing*{\section}{0pt}{1.6em}{0.8em}
+\titlespacing*{\subsection}{0pt}{1.2em}{0.5em}
+
+\pagestyle{fancy}
+\fancyhf{}
+\fancyhead[L]{\small 航空驾驶舱模拟系统}
+\fancyhead[R]{\small 项目需求分析报告}
+\fancyfoot[C]{\small --\ \thepage\ --}
+\renewcommand{\headrulewidth}{0.4pt}
+\renewcommand{\footrulewidth}{0pt}
+
+\graphicspath{{./}}
+\newcolumntype{Y}{>{\raggedright\arraybackslash}X}
+\newcolumntype{C}[1]{>{\centering\arraybackslash}p{#1}}
+\newcolumntype{L}[1]{>{\raggedright\arraybackslash}p{#1}}
+\newcommand{\thead}[1]{\cellcolor{Navy}\color{white}\sffamily\bfseries #1}
+\newcommand{\qitem}[1]{\par\noindent\textbf{#1}\par}
+
+\begin{document}
+
+%============================ 封面 ============================
+\begin{titlepage}
+  \thispagestyle{empty}
+  \begin{center}
+    \vspace*{1.5cm}
+    {\sffamily\bfseries\zihao{1}\color{Navy} 项目需求分析报告\par}
+    \vspace{0.35cm}
+    {\color{Blue}\rule{0.78\textwidth}{1.2pt}\par}
+    \vspace{2.5cm}
+    {\sffamily\zihao{2}\bfseries 航空驾驶舱模拟系统\par}
+    \vspace{2.8cm}
+
+    \renewcommand{\arraystretch}{1.65}
+    \begin{tabular}{C{3.6cm}L{8.0cm}}
+      \textbf{学\hspace{2em}院} & 青岛软件学院，计算机科学与技术学院 \\
+      \textbf{专\hspace{2em}业} & 软件工程 \\
+      \textbf{班\hspace{2em}级} & 2501 \\
+      \textbf{学\hspace{2em}号} & 2507020110 \\
+      \textbf{姓\hspace{2em}名} & 贾元鑫 \\
+    \end{tabular}
+
+    \vfill
+    {\zihao{4}2026 年 7 月 5 日\par}
+    \vspace{1.0cm}
+  \end{center}
+\end{titlepage}
+
+\pagenumbering{Roman}
+\thispagestyle{empty}
+\tableofcontents
+\clearpage
+\pagenumbering{arabic}
+\setcounter{page}{1}
+
+%============================ 第一章 ============================
+\section{调研目的}
+
+\qitem{（1）确认系统的使用与管理部门}
+本系统主要服务于航空实训教学、软件工程综合实训和项目验收。实际使用及管理主体包括软件学院实训教学团队、学生项目开发与测试小组，以及承担系统部署、资源维护和验收记录管理的指导教师或实验室管理人员。
+
+\qitem{（2）确认纳入系统的主要业务}
+纳入系统的业务包括：驾驶舱显示模块的启动与退出，PFD 主飞行参数显示，ND 导航信息显示，EICAS 发动机参数与告警显示，FMC 机场及航路配置，基于 X-Plane Connect/UDP 的实时数据采集，模拟数据备用切换，资源文件加载，以及运行日志和故障测试管理。
+
+\qitem{（3）明确系统建设目标}
+系统拟采用 C 语言与 SDL2 构建模块化航空驾驶舱模拟平台，通过统一飞行数据模型驱动 PFD、ND、EICAS 和 FMC 的独立运行与综合联动。系统既能接收 X-Plane 实时数据，也能在未连接模拟器时使用本地文件或内置模拟数据完成演示、调试与验收。
+
+\qitem{（4）分析系统预期效益}
+系统可直观呈现飞行姿态、速度、高度、航向、导航、发动机状态和告警信息，降低飞行仪表及网络通信知识的学习门槛；同时借助模块化接口、统一数据结构和可重复的故障场景，提高项目开发、集成联调和验收工作的效率与可追溯性。
+
+%============================ 第二章 ============================
+\section{预计使用用户}
+
+\subsection{可能用户}
+根据教学、操作、测试和维护场景，系统用户可划分如下。各类用户关注重点不同，因此系统应同时满足界面可读、操作易懂、测试可重复和维护便利等要求。
+
+\begin{longtable}{C{2.6cm}L{4.0cm}L{6.3cm}C{1.4cm}}
+\hline
+\thead{用户类别}&\thead{主要目标}&\thead{典型操作}&\thead{频率}\\
+\hline
+\endfirsthead
+\thead{用户类别}&\thead{主要目标}&\thead{典型操作}&\thead{频率}\\
+\hline
+\endhead
+飞行员/模拟操作员&观察飞行状态并完成基本航路操作&查看 PFD、ND、EICAS，输入 FMC 航路并确认告警&高\\
+\hline
+实训学生&学习 SDL2 图形开发、仪表逻辑及 UDP 数据交互&运行模块、修改程序、切换数据源并执行测试&高\\
+\hline
+指导教师/验收人员&检查需求实现情况与系统完成质量&按用例验收、注入故障、核对显示和告警&中\\
+\hline
+系统开发人员&完成模块开发、接口联调与缺陷修复&调试数据结构、渲染逻辑、线程和 Socket&高\\
+\hline
+实验室/系统维护人员&保障运行环境、字体、资源和数据文件可用&配置路径、更新数据、查看日志并排查连接问题&低至中\\
+\hline
+\end{longtable}
+
+\subsection{确定参与者}
+在用例建模中，将直接操作系统的人员及与系统交换数据的外部对象抽象为参与者。参与者仅通过明确的用户界面或数据接口与系统交互，不依赖模块内部实现。
+
+\begin{longtable}{C{3.6cm}C{2.4cm}L{8.5cm}}
+\hline
+\thead{参与者}&\thead{类型}&\thead{职责及交互}\\
+\hline
+\endfirsthead
+\thead{参与者}&\thead{类型}&\thead{职责及交互}\\
+\hline
+\endhead
+飞行员/操作员&主要参与者&启动和退出系统，观察飞行、导航及发动机信息，操作 FMC，并确认告警。\\
+\hline
+教员/测试人员&主要参与者&选择模拟场景，检查正常与异常状态，按用例完成项目验收。\\
+\hline
+系统维护人员&支持参与者&维护配置、字体、资源、导航数据和日志，处理通信及部署问题。\\
+\hline
+X-Plane 模拟器/Connect 插件&外部系统&通过 UDP 提供位置、姿态、速度、高度和发动机等实时数据。\\
+\hline
+机场与航路数据文件&外部数据源&为 FMC 和 ND 提供机场、导航台、航路点及航路段数据。\\
+\hline
+\end{longtable}
+
+%============================ 第三章 ============================
+\section{业务定义与建模}
+
+\subsection{业务定义}
+为保证需求、开发、测试和验收阶段使用一致的概念，系统核心业务术语定义如下。
+
+\begin{longtable}{C{4.2cm}L{10.3cm}}
+\hline
+\thead{术语}&\thead{业务定义}\\
+\hline
+\endfirsthead
+\thead{术语}&\thead{业务定义}\\
+\hline
+\endhead
+航空驾驶舱模拟系统&基于 C 语言和 SDL2 开发的 Windows 桌面软件，用于模拟驾驶舱显示、飞行管理、数据接入及异常处理。\\
+\hline
+PFD（主飞行显示器）&集中显示空速、高度、姿态、航向、垂直速度、目标参数和飞行模式，是判断基本飞行状态的主要界面。\\
+\hline
+ND（导航显示器）&显示飞机当前位置、航向、航迹、航路点、航线、距离、方位和地图范围等导航信息。\\
+\hline
+EICAS（发动机指示与机组告警系统）&显示发动机推力、转速、温度、燃油及系统状态，并按优先级显示警告、注意和提示信息。\\
+\hline
+FMC（飞行管理计算机）&提供机场选择、航路点查询、航路段添加、航路编辑、分页查看和飞行计划管理功能。\\
+\hline
+统一飞行数据模型&保存当前飞行参数、有效性、更新时间和数据来源，作为各显示模块读取数据的统一接口。\\
+\hline
+X-Plane Connect/UDP&系统与 X-Plane 模拟器交换飞行数据的通信方式，负责请求、接收、解析和更新实时参数。\\
+\hline
+模拟数据模式&在模拟器未启动、网络断连或教学测试时，使用本地文件或内置生成器提供可控数据。\\
+\hline
+告警状态&根据发动机或飞行参数越限生成 WARNING、CAUTION 或提示信息，并在界面中明确区分优先级。\\
+\hline
+\end{longtable}
+
+\subsubsection*{核心飞行数据字典}
+下表给出显示与数据采集模块共同使用的核心字段约束。未在当前项目中固化的阈值由模块配置或告警规则确定，避免将尚未实现的数值写成强制要求。
+
+{\scriptsize
+\begin{longtable}{C{1.5cm}C{1.0cm}L{2.4cm}L{1.8cm}L{1.4cm}L{1.8cm}L{3.1cm}}
+\hline
+\thead{字段名称}&\thead{单位}&\thead{数据来源}&\thead{建议有效范围}&\thead{更新方式}&\thead{使用模块}&\thead{无效或超时处理}\\
+\hline
+\endfirsthead
+\thead{字段名称}&\thead{单位}&\thead{数据来源}&\thead{建议有效范围}&\thead{更新方式}&\thead{使用模块}&\thead{无效或超时处理}\\
+\hline
+\endhead
+空速&kt&X-Plane 或模拟数据&0--440&周期更新&PFD&越界限幅；无效或超时时显示标识\\ \hline
+高度&ft&X-Plane 或模拟数据&-1000--50000&周期更新&PFD&越界限幅；无效或超时时标记\\ \hline
+俯仰角&°&X-Plane 或模拟数据&-90--90&周期更新&PFD&显示无效标识，姿态仪进入预设无效显示状态\\ \hline
+横滚角&°&X-Plane 或模拟数据&-180--180&周期更新&PFD&无效或超时时显示标识\\ \hline
+航向&°&X-Plane 或模拟数据&0--359&周期更新&PFD、ND&归一化至 0--359；无效时标记\\ \hline
+垂直速度&ft/min&X-Plane 或模拟数据&由模块配置确定&周期更新&PFD&越界限幅；无效或超时时标记\\ \hline
+经度&°&X-Plane 或模拟数据&-180--180&周期更新&ND&越界或无效时不更新地图位置\\ \hline
+纬度&°&X-Plane 或模拟数据&-90--90&周期更新&ND&越界或无效时不更新地图位置\\ \hline
+地速&kt&X-Plane 或模拟数据&非负&周期更新&ND&负值或无效值不得参与导航计算\\ \hline
+发动机转速&\%&X-Plane 或模拟数据&由模块配置确定&周期更新&EICAS&按有效性标记；阈值由告警规则确定\\ \hline
+发动机温度&项目实际单位&X-Plane 或模拟数据&由告警规则确定&周期更新&EICAS&无效时不生成越限告警，并显示无效状态\\ \hline
+燃油量&项目实际单位&X-Plane 或模拟数据&由模块配置确定&周期更新&EICAS&无效或超时时标记\\ \hline
+数据源状态&枚举&数据采集模块&REALTIME、SIMULATION、STALE、INVALID&状态变化时&PFD、ND、EICAS、FMC、日志&按状态显示数据来源及有效性\\ \hline
+更新时间&ms 时间戳&数据采集模块&单调递增&每字段更新&所有数据模块&用于判断超时并切换为 STALE 或 INVALID\\ \hline
+\end{longtable}
+}
+
+\subsection{业务建模}
+系统业务围绕“系统初始化—数据采集—数据校验—统一飞行数据模型更新—模块显示—告警处理—用户交互—安全退出”展开。实时数据和模拟数据共用同一数据模型，使 PFD、ND、EICAS 与 FMC 在不同运行环境下保持一致的显示和交互逻辑。
+
+\begin{longtable}{C{1.3cm}C{2.4cm}C{2.2cm}L{3.5cm}L{4.4cm}}
+\hline
+\thead{编号}&\thead{业务事件}&\thead{触发者}&\thead{主要输入}&\thead{处理结果}\\
+\hline
+\endfirsthead
+\thead{编号}&\thead{业务事件}&\thead{触发者}&\thead{主要输入}&\thead{处理结果}\\
+\hline
+\endhead
+BE-01&系统启动&飞行员/操作员&启动命令、配置及资源文件&完成 SDL2、窗口、字体、数据模块和显示模块初始化\\
+\hline
+BE-02&实时数据接入&主控程序/X-Plane&IP、端口、数据请求或订阅项&创建 UDP Socket，发送数据请求或等待响应，并更新实时数据源可用状态\\
+\hline
+BE-03&周期数据刷新&系统定时器&实时数据包或模拟数据&解析、校验并更新统一飞行数据模型\\
+\hline
+BE-04&显示模块刷新&显示模块&飞行数据快照&按逻辑分辨率刷新 PFD、ND、EICAS 和 FMC，绘制飞行仪表、导航地图、发动机参数及告警信息\\
+\hline
+BE-05&FMC 航路配置&飞行员/操作员&机场、航路点、航路段和按键输入&形成校验后的活动航路并提供给 ND\\
+\hline
+BE-06&数据源异常切换&数据采集模块&超时、断连或无效数据&切换至模拟数据模式，提示连接异常，提供可控的备用模拟数据并明确标记数据来源\\
+\hline
+BE-07&告警生成&数据更新或 EICAS 告警判断模块&发动机参数、飞行参数、数据有效性及告警阈值规则&生成告警级别和告警文本，按优先级显示并记录\\
+\hline
+BE-08&告警确认&飞行员/操作员&告警确认操作&记录确认状态，但不清除仍然存在的故障条件\\
+\hline
+BE-09&系统退出&飞行员/操作员&关闭窗口或退出命令&停止线程、关闭 Socket 并释放 SDL 资源\\
+\hline
+\end{longtable}
+
+\clearpage
+\begin{landscape}
+\thispagestyle{empty}
+\begin{figure}[H]
+  \centering
+  \includegraphics[width=0.90\linewidth,height=0.82\textheight,keepaspectratio]{business_flow_cropped.png}
+  \caption{航空驾驶舱模拟系统业务流程图}
+  \label{fig:business-flow}
+\end{figure}
+\end{landscape}
+\clearpage
+
+\begin{landscape}
+\thispagestyle{empty}
+\begin{figure}[H]
+  \centering
+  \includegraphics[width=0.92\linewidth,height=0.80\textheight,keepaspectratio]{activity_diagram_cropped.png}
+  \caption{航空驾驶舱模拟系统业务活动图}
+  \label{fig:activity}
+\end{figure}
+\end{landscape}
+\clearpage
+
+\clearpage
+\subsubsection*{关键业务规则}
+\begin{longtable}{C{2.0cm}L{12.5cm}}
+\hline
+\thead{规则编号}&\thead{规则内容}\\
+\hline
+\endfirsthead
+\thead{规则编号}&\thead{规则内容}\\
+\hline
+\endhead
+BR-01&网络接收与 SDL 渲染必须解耦；数据线程仅更新数据模型，所有 SDL 绘制均在主线程完成。\\
+\hline
+BR-02&每个数据字段应记录有效性、更新时间和数据来源；超时数据必须明确标记，不得长期静默显示旧值。\\
+\hline
+BR-03&实时数据源不可用后，系统应自动切换至备用模拟数据，并明确显示当前处于模拟模式；恢复数据响应后，应连续收到多次格式正确且时间戳有效的数据，确认数据源稳定后再切回实时模式。\\
+\hline
+BR-04&PFD、ND、EICAS 和 FMC 通过统一接口读取状态，模块之间不得直接修改彼此的内部变量。\\
+\hline
+BR-05&窗口缩放必须保持逻辑画布比例，关键仪表、文字和告警不得拉伸、遮挡或超出可视区域。\\
+\hline
+BR-06&机场、航路点和航路段输入须完成存在性、重复性、衔接关系及边界检查，错误输入不得写入活动航路。\\
+\hline
+\end{longtable}
+
+%============================ 第四章 ============================
+\section{用例建模}
+用例模型以飞行员/操作员、教员/测试人员、系统维护人员、X-Plane 模拟器及机场与航路数据文件为参与者，描述系统对外提供的核心能力。系统边界内既包含仪表显示和 FMC 交互，也包含实时数据接入、异常切换、资源维护与运行记录。
+
+\begin{longtable}{C{1.3cm}L{3.1cm}L{3.8cm}C{1.2cm}L{4.2cm}}
+\hline
+\thead{编号}&\thead{用例名称}&\thead{主要参与者}&\thead{优先级}&\thead{说明}\\
+\hline
+\endfirsthead
+\thead{编号}&\thead{用例名称}&\thead{主要参与者}&\thead{优先级}&\thead{说明}\\
+\hline
+\endhead
+UC-01&启动与退出系统&飞行员/操作员&高&初始化资源与模块，进入事件循环并安全释放资源\\
+\hline
+UC-02&查看 PFD 飞行参数&飞行员/操作员&高&显示空速、高度、姿态、航向及垂直速度\\
+\hline
+UC-03&查看 ND 导航信息&飞行员/操作员&高&显示位置、航迹、航路点、航线及地图范围\\
+\hline
+UC-04&查看 EICAS 发动机与告警&飞行员/操作员&高&显示发动机参数并生成分级告警\\
+\hline
+UC-05&配置 FMC 航路&飞行员/操作员&高&选择机场、查询航路点、添加航路段并分页查看\\
+\hline
+UC-06&接入 X-Plane 实时数据&X-Plane 模拟器/Connect 插件、系统维护人员&高&创建 UDP Socket，接收并解析实时飞行数据，更新统一飞行数据模型和数据源状态\\
+\hline
+UC-07&切换模拟数据与故障测试&教员/测试人员&中&在无模拟器或故障场景下提供可控测试数据\\
+\hline
+UC-08&维护配置、资源与日志&系统维护人员&中&维护字体、路径、导航数据、通信参数及日志\\
+\hline
+\end{longtable}
+
+\clearpage
+\begin{landscape}
+\thispagestyle{empty}
+\begin{figure}[H]
+  \centering
+  \includegraphics[width=0.90\linewidth,height=0.80\textheight,keepaspectratio]{use_case_diagram_cropped.png}
+  \caption{航空驾驶舱模拟系统用例图}
+  \label{fig:use-case}
+\end{figure}
+\end{landscape}
+\clearpage
+
+%============================ 第五章 ============================
+\clearpage
+\section{用例规约}
+以下采用“编号与名称—参与者—优先级—目标与触发—前置条件—主成功场景—异常流程—关联关系—输出及后置条件—验收标准”的统一格式描述核心用例，可直接作为后续开发检查、联调测试及项目验收的依据。
+
+\newcounter{usecaseblock}
+\newcommand{\usecase}[9]{%
+\ifnum\value{usecaseblock}>0\clearpage\fi
+\stepcounter{usecaseblock}%
+\subsection{#1 #2}
+\begingroup
+\small\linespread{1.16}\selectfont
+\renewcommand{\arraystretch}{1.20}%
+\begin{longtable}{C{3.2cm}L{11.3cm}}
+\hline
+\thead{规约项}&\thead{内容}\\
+\hline
+\endfirsthead
+\thead{规约项}&\thead{内容}\\
+\hline
+\endhead
+用例编号&#1\\
+\hline
+用例名称&#2\\
+\hline
+主要参与者&#3\\
+\hline
+优先级&#4\\
+\hline
+目标与触发&#5\\
+\hline
+前置条件&#6\\
+\hline
+主成功场景&#7\\
+\hline
+异常/备选流程&#8\\
+\hline
+关联用例或扩展点&#9\\
+\hline}
+
+\newcommand{\usecaseend}[2]{%
+输出及后置条件&#1\\
+\hline
+验收标准&#2\\
+\hline
+\end{longtable}
+\endgroup}
+
+\usecase{UC-01}{启动与退出系统}
+{飞行员/操作员}
+{高}
+{用户运行主程序或关闭系统；目标是在资源完整时可靠启动，并在退出时完整释放线程、Socket 和 SDL 资源。}
+{程序文件、SDL2 运行库和基础字体可访问；配置文件缺失时允许采用安全默认值。}
+{1）读取配置，确定窗口、字体及数据源参数；2）初始化 SDL2、TTF、窗口、渲染器和逻辑纹理；3）初始化统一飞行数据模型与 PFD、ND、EICAS、FMC；4）启动数据线程并进入事件循环；5）收到退出请求后，依次停止线程、关闭 Socket、销毁纹理、渲染器和窗口。}
+{资源缺失时显示明确错误并使用替代资源或安全退出；模块初始化失败时不得继续访问无效指针；重复关闭请求只允许执行一次资源释放。}
+{无。}
+\usecaseend
+{成功时进入稳定刷新状态；退出后无残留线程、锁定文件或异常崩溃。}
+{系统可连续启动与退出 10 次；关闭窗口后 3 秒内结束；日志中无重复释放、空指针或线程未停止错误。}
+
+\usecase{UC-02}{查看 PFD 飞行参数}
+{飞行员/操作员}
+{高}
+{系统获得实时或模拟飞行数据后，持续显示空速、高度、姿态、航向、垂直速度、目标速度和目标高度。}
+{PFD 模块初始化成功；统一飞行数据模型提供所需字段及有效性状态。}
+{1）读取飞行数据快照；2）绘制姿态仪、空速带、高度带、航向刻度、垂直速度及飞行模式区域；3）显示当前值、目标值和单位；4）按固定周期刷新；5）窗口变化时按逻辑分辨率等比例缩放。}
+{数据超时或越界时执行限幅并显示无效或超时标识；字体或纹理加载失败时使用备用资源；实时数据源中断时切换至模拟数据模式；如短时间内暂时保留最近一次有效值，必须明确标记该数据已经超时。}
+{依赖统一飞行数据模型提供有效飞行参数。}
+\usecaseend
+{PFD 与最新有效数据同步，画面比例稳定，关键数值及单位清晰可读。}
+{空速 0--440 kt、高度 -1000--50000 ft 等边界输入不崩溃；目标值、刻度和指针一致；缩放后无拉伸、遮挡或文字越界。}
+
+\usecase{UC-03}{查看 ND 导航信息}
+{飞行员/操作员}
+{高}
+{用户查看 ND 页面时，系统显示当前位置、航向、航迹、地速、活动航路、航路点、距离和地图范围。}
+{ND 模块初始化成功；导航数据文件可读取；统一飞行数据模型提供经纬度、航向、航迹及地速。}
+{1）读取位置及导航数据；2）依据当前范围换算地图坐标；3）绘制飞机符号、罗盘、航迹线、航路点和活动航段；4）计算下一航路点的方位与距离；5）处理模式、范围及页面切换。}
+{导航文件缺失时保留基础罗盘和飞机符号并提示数据不可用；经纬度或航路数据异常时跳过无效目标，禁止访问越界数组。}
+{依赖 UC-05 发布的活动航路及机场与航路数据。}
+\usecaseend
+{ND 显示当前飞行位置和可用导航信息，并与 FMC 活动航路保持一致。}
+{不同范围和模式下内容可正确重排；无航路、单航路点和多航段均可显示；导航文件缺失时程序仍能启动。}
+
+\usecase{UC-04}{查看 EICAS 发动机与告警}
+{飞行员/操作员}
+{高}
+{发动机数据更新或参数越限时，系统显示推力、转速、温度、燃油等参数，并生成分级告警。}
+{EICAS1/EICAS2 模块初始化成功；发动机字段、阈值及告警颜色规则可用。}
+{1）读取发动机及系统状态；2）绘制仪表、指针、数值、单位和状态；3）调用辅助用例生成并显示告警；4）按 WARNING、CAUTION、提示优先级排序；5）显示并记录告警变化。}
+{单字段无效时仅标记对应仪表；告警超出显示区域时分页或截断，并保留最高优先级；实时数据源不可用时显示数据源状态。}
+{\textless\textless include\textgreater\textgreater 生成并显示告警。查看 EICAS 发动机与告警时必须调用该辅助用例。}
+\usecaseend
+{当前发动机状态及未解除告警持续可见；告警确认不会删除仍存在的故障条件。}
+{阈值边界前后的颜色和级别正确；多告警排序稳定；EICAS1/EICAS2 可独立运行，异常数据不导致崩溃。}
+
+\usecase{UC-05}{配置 FMC 航路}
+{飞行员/操作员}
+{高}
+{用户进入机场选择或 RTE 页面，输入出发机场、目的机场、航路点和航路段，建立供 ND 使用的活动航路。}
+{机场、航路点和航路数据已加载；键盘或界面按键输入可用。}
+{1）调用辅助用例加载机场与航路数据；2）查询出发与目的机场；3）输入航路段或航路点；4）校验存在性、重复性和航路段衔接关系；5）加入航路数组；6）分页显示、删除或修改航路段；7）确认并发布活动航路。}
+{输入为空、机场不存在、航路点重复或航路段无法衔接时，显示错误并保持原航路；数据文件读取失败时禁止提交但允许退出页面。}
+{\textless\textless include\textgreater\textgreater 加载机场与航路数据。配置 FMC 航路前必须加载并校验机场、航路点和航路数据。}
+\usecaseend
+{形成经校验的航路数据，并同步给 ND 进行航线绘制。}
+{合法输入可正确添加、删除、翻页和保存；非法输入不破坏已有航路；页码、数组长度与显示内容一致且无越界访问。}
+
+\usecase{UC-06}{接入 X-Plane 实时数据}
+{X-Plane 模拟器/Connect 插件、系统维护人员}
+{高}
+{系统启动后通过 X-Plane Connect/UDP 接入实时数据，在规定时间内等待响应并持续解析有效飞行参数。}
+{X-Plane 和插件已运行；IP、端口、防火墙及数据请求配置正确。}
+{1）创建并配置 UDP Socket；2）发送请求或建立数据订阅；3）在规定时间内等待数据响应；4）校验数据包类型、长度、字段、时间戳和字节序；5）解析并更新统一飞行数据模型；6）更新实时数据源可用状态及字段最后更新时间。}
+{未收到响应、网络错误、数据包格式错误或长时间未更新时，不阻塞 SDL 主循环；记录异常并切换至模拟数据模式。恢复数据响应后，只有连续收到多次格式正确且时间戳有效的数据，确认数据源稳定后，才能恢复实时模式。}
+{被 UC-07 扩展。扩展点：未收到响应、数据超时、数据包格式错误、数据长时间未更新或教员主动启动故障测试。}
+\usecaseend
+{实时数据源可用时，各模块获得最新数据；数据源状态、更新时间和数据有效性可被显示或记录。}
+{X-Plane 数据变化可反映到界面；数据源不可用时 SDL 主循环不阻塞；重复错误按限频规则记录；恢复后满足连续有效数据条件才切回实时模式。}
+
+\usecase{UC-07}{切换模拟数据与故障测试}
+{教员/测试人员}
+{中}
+{在无 X-Plane、实时数据源不可用或需要异常测试时，使用本地文件或内置生成器提供可控数据。}
+{模拟数据文件或内置生成规则可用；统一飞行数据模型已初始化。}
+{1）选择或自动进入模拟模式；2）读取测试文件或生成姿态、速度、高度和发动机数据；3）写入有效性、时间戳和来源；4）运行爬升、转弯、超速、高温、断连等场景；5）观察各模块显示及告警响应。}
+{测试文件格式错误时跳过无效行并采用默认数据；数值越界时限幅；实时数据源恢复后，经连续多次有效数据确认再切回。}
+{\textless\textless extend\textgreater\textgreater UC-06 接入 X-Plane 实时数据。扩展条件：X-Plane 数据源不可用、实时数据超时、收到无效数据，或者教员主动选择模拟测试模式。}
+\usecaseend
+{系统明确标记当前数据来源，并持续提供可渲染、可复现的测试数据。}
+{无 X-Plane 时 PFD、ND、EICAS、FMC 均可演示；相同测试场景结果一致；数据源切换期间事件循环持续响应且不崩溃。}
+
+\usecase{UC-08}{维护配置、资源与日志}
+{系统维护人员}
+{中}
+{维护人员修改字体、资源路径、逻辑分辨率、导航数据、IP/端口和日志级别，或查看运行记录定位问题。}
+{维护人员具有项目目录和配置文件的访问权限。}
+{1）查看当前配置和资源路径；2）修改允许的参数；3）校验类型、范围和文件存在性；4）更新机场、航路点、航路数据或模拟数据文件；5）重新启动系统或重新加载允许动态更新的资源；6）查看日志确认配置生效。}
+{配置非法时拒绝保存并恢复默认值；资源文件被占用或损坏时保留原文件；未知配置项被忽略并记录。}
+{为 UC-01、UC-05、UC-06 和 UC-07 提供配置、资源与日志支持。}
+\usecaseend
+{合法配置在当前或下次启动时生效，问题可通过日志及状态信息定位。}
+{错误路径不会导致无提示崩溃；配置修改前后行为可验证；日志包含时间、模块、级别和原因，且不记录敏感凭据。}
+
+\subsection{辅助用例说明}
+
+\subsubsection*{辅助用例 A：生成并显示告警}
+\begingroup
+\small\linespread{1.16}\selectfont
+\renewcommand{\arraystretch}{1.20}
+\begin{longtable}{C{3.2cm}L{11.3cm}}
+\hline
+\thead{规约项}&\thead{内容}\\ \hline
+\endfirsthead
+\thead{规约项}&\thead{内容}\\ \hline
+\endhead
+用例名称&生成并显示告警\\ \hline
+调用用例&UC-04 查看 EICAS 发动机与告警\\ \hline
+主要功能&读取发动机参数、飞行参数及阈值规则，判断参数是否越限，生成 WARNING、CAUTION 或提示信息，并按照优先级显示和记录。\\ \hline
+前置条件&EICAS 模块、告警规则和数据字段有效性状态已初始化。\\ \hline
+主流程&1）读取发动机与飞行参数；2）检查数据有效性；3）与告警阈值比较；4）生成告警级别和告警文本；5）按照优先级排序；6）在 EICAS 页面显示并写入日志。\\ \hline
+异常处理&数据无效时不得生成错误告警，应显示数据无效或实时数据源异常状态。\\ \hline
+\end{longtable}
+\endgroup
+
+\pagebreak[3]
+\subsubsection*{辅助用例 B：加载机场与航路数据}
+\begingroup
+\small\linespread{1.16}\selectfont
+\renewcommand{\arraystretch}{1.20}
+\begin{longtable}{C{3.2cm}L{11.3cm}}
+\hline
+\thead{规约项}&\thead{内容}\\ \hline
+\endfirsthead
+\thead{规约项}&\thead{内容}\\ \hline
+\endhead
+用例名称&加载机场与航路数据\\ \hline
+调用用例&UC-05 配置 FMC 航路\\ \hline
+外部参与者&机场与航路数据文件\\ \hline
+主要功能&读取并解析机场、导航台、航路点和航路段数据，为 FMC 查询和 ND 航路显示提供数据。\\ \hline
+主流程&1）检查数据文件是否存在；2）读取文件；3）解析机场、航路点和航路段；4）校验字段格式和数据范围；5）建立查询结构；6）向 FMC 和 ND 提供只读访问接口。\\ \hline
+异常处理&文件不存在、格式错误或数据损坏时，记录错误并禁止提交新的活动航路，但系统其他模块仍应允许启动。\\ \hline
+\end{longtable}
+\endgroup
+
+\subsection{通用验收要求}
+\begin{longtable}{C{3.0cm}L{11.5cm}}
+\hline
+\thead{验收类别}&\thead{验收要求}\\
+\hline
+\endfirsthead
+\thead{验收类别}&\thead{验收要求}\\
+\hline
+\endhead
+功能完整性&PFD、ND、EICAS、FMC、实时数据、模拟数据及维护功能均可按用例执行，关键异常具有明确处理。\\
+\hline
+稳定性&系统应连续运行不少于 2 小时无崩溃、死锁或明显资源泄漏；连续执行不少于 10 次启动和退出测试。\\
+\hline
+性能&界面平均刷新率建议不低于 30 FPS；网络接收和文件读取不得长期阻塞 SDL 主线程；正常运行时，单次事件循环不应因网络等待产生明显停顿。\\
+\hline
+响应性&用户按键、窗口缩放和 FMC 操作应在 200 ms 内产生可见反馈。\\
+\hline
+退出性能&收到退出请求后，应在 3 秒内停止数据采集线程、关闭 UDP Socket 并释放 SDL 资源。\\
+\hline
+界面一致性&仪表颜色、字体、单位、线宽、边框及告警优先级符合统一规范；缩放后关键内容仍清晰。\\
+\hline
+数据正确性&相同数据在各模块中含义一致；无效、超时和模拟数据来源可识别；不得静默使用错误数据。\\
+\hline
+数据时效性&每个实时字段应记录最后更新时间；超过配置的超时阈值后必须标记为 STALE 或 INVALID，不得继续作为有效实时数据静默显示。\\
+\hline
+重连策略&模拟模式下按照可配置时间间隔尝试重新接入 X-Plane；只有连续收到多次格式正确、时间戳有效的数据后，才能切回实时模式。\\
+\hline
+日志限频&同一网络错误不得在每一帧重复输出；重复错误应限频记录，同时保留首次发生时间、最近发生时间和累计次数。\\
+可维护性&模块职责清晰，公共结构与接口集中定义；错误日志能够定位到模块和原因。\\
+\hline
+安全边界&系统仅用于教学、实训和软件模拟，不作为真实航空器适航设备或实际飞行决策依据。\\
+\hline
+\end{longtable}
+
+\clearpage
+\section*{结语}
+\addcontentsline{toc}{section}{结语}
+本报告在保留原需求分析模板框架的基础上，完善了航空驾驶舱模拟系统的调研结果、参与者、业务定义、业务流程、用例模型及用例规约。后续设计与开发应以统一飞行数据模型和模块化接口为基础，优先保证实时数据断连、超时或格式异常不会阻塞 SDL 主循环，也不会导致显示模块崩溃或静默显示失效数据，并通过模拟数据建立可重复的测试与验收环境。
+
+\vfill
+\begin{center}
+\small\color{gray}—— 报告结束 ——
+\end{center}
+
+\end{document}

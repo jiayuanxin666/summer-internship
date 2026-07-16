@@ -4,476 +4,284 @@
 #include <stdio.h>
 #include <string.h>
 
-#define EICAS1_PI 3.14159265358979323846f
-
-static int g_fps_value = 0;
-static int g_fps_frames = 0;
-static Uint32 g_fps_last_tick = 0;
+#define EICAS_PI 3.14159265358979323846f
 
 static int iroundf_local(float value)
 {
     return (int)(value + (value >= 0.0f ? 0.5f : -0.5f));
 }
 
-static SDL_Color color_main(void)
-{
-    SDL_Color color = {235, 240, 245, 255};
-    return color;
-}
+static SDL_Color color_white(void) { SDL_Color c = {232, 232, 232, 255}; return c; }
+static SDL_Color color_cyan(void) { SDL_Color c = {0, 174, 182, 255}; return c; }
+static SDL_Color color_green(void) { SDL_Color c = {0, 150, 35, 255}; return c; }
+static SDL_Color color_amber(void) { SDL_Color c = {255, 188, 0, 255}; return c; }
+static SDL_Color color_red(void) { SDL_Color c = {255, 35, 20, 255}; return c; }
 
-static SDL_Color color_label(void)
-{
-    SDL_Color color = {120, 255, 150, 255};
-    return color;
-}
-
-static SDL_Color color_aux(void)
-{
-    SDL_Color color = {190, 205, 215, 255};
-    return color;
-}
-
-static SDL_Color color_warning(void)
-{
-    SDL_Color color = {255, 170, 60, 255};
-    return color;
-}
-
-static SDL_Color color_danger(void)
-{
-    SDL_Color color = {255, 70, 70, 255};
-    return color;
-}
-
-static const char *source_text(int source)
+static const char *data_source_text(int source)
 {
     switch (source) {
-    case EICAS1_DATA_SOURCE_FILE:
-        return "SRC FILE";
-    case EICAS1_DATA_SOURCE_XPLANE:
-        return "SRC XPLANE";
-    case EICAS1_DATA_SOURCE_SIM:
-    default:
-        return "SRC SIM";
+    case EICAS1_DATA_SOURCE_XPLANE: return "SRC XPLANE";
+    case EICAS1_DATA_SOURCE_FILE: return "SRC FILE";
+    default: return "SRC SIM";
     }
 }
 
-static TTF_Font *open_consolas_font(int size)
+static TTF_Font *open_eis_font(int size)
 {
     const char *paths[] = {
-        "assets/fonts/consola.ttf",
-        "../assets/fonts/consola.ttf",
-        "assets/ALIBABAPUHUITI-2-45-LIGHT.TTF",
-        "../assets/ALIBABAPUHUITI-2-45-LIGHT.TTF",
-        "C:/Windows/Fonts/consola.ttf",
-        "C:/Windows/Fonts/consolab.ttf",
-        "C:/Windows/Fonts/arial.ttf",
-        "C:/Windows/Fonts/lucon.ttf",
-        "C:/Windows/Fonts/cour.ttf",
-        "C:/Windows/Fonts/msyh.ttc"
+        "assets/fonts/consola.ttf", "../assets/fonts/consola.ttf",
+        "C:/Windows/Fonts/consola.ttf", "C:/Windows/Fonts/lucon.ttf",
+        "C:/Windows/Fonts/arial.ttf"
     };
-
     for (int i = 0; i < (int)(sizeof(paths) / sizeof(paths[0])); ++i) {
         TTF_Font *font = TTF_OpenFont(paths[i], size);
-        if (font) {
-            return font;
-        }
+        if (font) return font;
     }
-
     return NULL;
 }
 
 static int load_fonts(EICAS1_UI *ui)
 {
-    ui->font_small = open_consolas_font(15);
-    ui->font_medium = open_consolas_font(20);
-    ui->font_large = open_consolas_font(28);
-
-    if (!ui->font_small && !ui->font_medium && !ui->font_large) {
+    ui->font_small = open_eis_font(15);
+    ui->font_medium = open_eis_font(19);
+    ui->font_large = open_eis_font(25);
+    if (!ui->font_small || !ui->font_medium || !ui->font_large) {
         printf("EICAS1 font loading failed: %s\n", TTF_GetError());
         return -1;
     }
-
-    if (!ui->font_medium) {
-        ui->font_medium = open_consolas_font(20);
-        if (!ui->font_medium) {
-            ui->font_medium = ui->font_small ? ui->font_small : ui->font_large;
-        }
-    }
-    if (!ui->font_small) {
-        ui->font_small = ui->font_medium ? ui->font_medium : ui->font_large;
-    }
-    if (!ui->font_large) {
-        ui->font_large = ui->font_medium ? ui->font_medium : ui->font_small;
-    }
-
     return 0;
 }
 
-static int draw_ttf_text(SDL_Renderer *renderer, TTF_Font *font, int x, int y,
-                         const char *text, SDL_Color color)
+static int draw_text(SDL_Renderer *renderer, TTF_Font *font, int x, int y,
+                     const char *text, SDL_Color color)
 {
     SDL_Surface *surface;
     SDL_Texture *texture;
     SDL_Rect dst;
-
-    if (!renderer || !font || !text) {
-        return 0;
-    }
-
+    if (!renderer || !font || !text) return 0;
     surface = TTF_RenderUTF8_Blended(font, text, color);
-    if (!surface) {
-        return 0;
-    }
-
+    if (!surface) return 0;
     texture = SDL_CreateTextureFromSurface(renderer, surface);
-    if (!texture) {
-        SDL_FreeSurface(surface);
-        return 0;
-    }
-
-    dst.x = x;
-    dst.y = y;
-    dst.w = surface->w;
-    dst.h = surface->h;
+    if (!texture) { SDL_FreeSurface(surface); return 0; }
+    dst.x = x; dst.y = y; dst.w = surface->w; dst.h = surface->h;
     SDL_RenderCopy(renderer, texture, NULL, &dst);
     SDL_DestroyTexture(texture);
     SDL_FreeSurface(surface);
     return 1;
 }
 
-static int draw_ttf_text_center(SDL_Renderer *renderer, TTF_Font *font, int cx, int y,
-                                const char *text, SDL_Color color)
+static int draw_text_center(SDL_Renderer *renderer, TTF_Font *font, int cx, int y,
+                            const char *text, SDL_Color color)
 {
-    int w = 0;
-    int h = 0;
-
-    if (!font || !text || TTF_SizeUTF8(font, text, &w, &h) != 0) {
-        return 0;
-    }
-
-    return draw_ttf_text(renderer, font, cx - w / 2, y, text, color);
+    int w = 0, h = 0;
+    if (!font || !text || TTF_SizeUTF8(font, text, &w, &h) != 0) return 0;
+    return draw_text(renderer, font, cx - w / 2, y, text, color);
 }
 
-static void update_fps_counter(void)
+static void update_render_rect(EICAS1_UI *ui)
 {
-    Uint32 now = SDL_GetTicks();
-    if (g_fps_last_tick == 0) {
-        g_fps_last_tick = now;
-    }
-
-    ++g_fps_frames;
-    if (now - g_fps_last_tick >= 1000) {
-        g_fps_value = g_fps_frames;
-        g_fps_frames = 0;
-        g_fps_last_tick = now;
-    }
+    float sx, sy, scale;
+    if (!ui || ui->window_width <= 0 || ui->window_height <= 0) return;
+    sx = (float)ui->window_width / EICAS1_LOGIC_WIDTH;
+    sy = (float)ui->window_height / EICAS1_LOGIC_HEIGHT;
+    scale = sx < sy ? sx : sy;
+    ui->render_rect.w = (int)(EICAS1_LOGIC_WIDTH * scale);
+    ui->render_rect.h = (int)(EICAS1_LOGIC_HEIGHT * scale);
+    ui->render_rect.x = (ui->window_width - ui->render_rect.w) / 2;
+    ui->render_rect.y = (ui->window_height - ui->render_rect.h) / 2;
 }
 
-static void EICAS1_UI_UpdateRenderRect(EICAS1_UI *ui)
+static void draw_value_box(EICAS1_UI *ui, int cx, int cy, int width,
+                           const char *text, SDL_Color color)
 {
-    float scale_x;
-    float scale_y;
-    float scale;
-    int render_w;
-    int render_h;
+    int left = cx - width / 2;
+    int right = cx + width / 2;
+    rectangleRGBA(ui->renderer, left, cy - 11, right, cy + 12, 225, 225, 225, 255);
+    draw_text_center(ui->renderer, ui->font_small, cx, cy - 9, text, color);
+}
 
-    if (!ui || ui->window_width <= 0 || ui->window_height <= 0) {
-        return;
+static void draw_limit_mark(EICAS1_UI *ui, int cx, int cy, int radius,
+                            float value, float maximum, SDL_Color color)
+{
+    float a = value / maximum * EICAS_PI;
+    int x1 = iroundf_local(cx + cosf(a) * (radius + 5));
+    int y1 = iroundf_local(cy + sinf(a) * (radius + 5));
+    int x2 = iroundf_local(cx + cosf(a) * (radius - 5));
+    int y2 = iroundf_local(cy + sinf(a) * (radius - 5));
+    lineRGBA(ui->renderer, x1, y1, x2, y2, color.r, color.g, color.b, 255);
+    lineRGBA(ui->renderer, x1 + 1, y1, x2 + 1, y2, color.r, color.g, color.b, 255);
+}
+
+static void draw_engine_gauge(EICAS1_UI *ui, int cx, int cy, int radius,
+                              float value, float max_value, int is_n1,
+                              const char *format)
+{
+    SDL_Renderer *r = ui->renderer;
+    char text[32];
+    float pct = value / max_value;
+    float angle;
+    int px, py;
+    SDL_Color value_color = color_white();
+    if (pct < 0.0f) pct = 0.0f;
+    if (pct > 1.0f) pct = 1.0f;
+    angle = pct * 180.0f;
+
+    filledPieRGBA(r, cx, cy, radius - 1, 0, iroundf_local(angle), 61, 61, 61, 255);
+    arcRGBA(r, cx, cy, radius, 0, 180, 232, 232, 232, 255);
+
+    /* The 737NG dial is graduated 0, 2, 4, 6, 8, 10 (x10 percent / x100 deg C). */
+    for (int step = 0; step <= 10; ++step) {
+        float scale_value = is_n1 ? (float)step * 10.0f : (float)step * 100.0f;
+        float a = scale_value / max_value * EICAS_PI;
+        int major = (step % 2) == 0;
+        if (scale_value > max_value) break;
+        {
+            int x1 = iroundf_local(cx + cosf(a) * radius);
+            int y1 = iroundf_local(cy + sinf(a) * radius);
+            int x2 = iroundf_local(cx + cosf(a) * (radius - (major ? 7 : 4)));
+            int y2 = iroundf_local(cy + sinf(a) * (radius - (major ? 7 : 4)));
+            lineRGBA(r, x1, y1, x2, y2, 232, 232, 232, 255);
+            if (major) {
+                int tx = iroundf_local(cx + cosf(a) * (radius - 17));
+                int ty = iroundf_local(cy + sinf(a) * (radius - 17)) - 8;
+                snprintf(text, sizeof(text), "%d", step);
+                draw_text_center(r, ui->font_small, tx, ty, text, color_white());
+            }
+        }
     }
 
-    scale_x = (float)ui->window_width / (float)EICAS1_LOGIC_WIDTH;
-    scale_y = (float)ui->window_height / (float)EICAS1_LOGIC_HEIGHT;
-    scale = scale_x < scale_y ? scale_x : scale_y;
-    render_w = (int)((float)EICAS1_LOGIC_WIDTH * scale);
-    render_h = (int)((float)EICAS1_LOGIC_HEIGHT * scale);
-    ui->render_rect.x = (ui->window_width - render_w) / 2;
-    ui->render_rect.y = (ui->window_height - render_h) / 2;
-    ui->render_rect.w = render_w;
-    ui->render_rect.h = render_h;
+    if (is_n1) {
+        draw_limit_mark(ui, cx, cy, radius, 100.0f, max_value, color_green());
+        draw_limit_mark(ui, cx, cy, radius, 105.0f, max_value, color_red());
+    } else {
+        draw_limit_mark(ui, cx, cy, radius, 950.0f, max_value, color_red());
+    }
+
+    px = iroundf_local(cx + cosf(angle * EICAS_PI / 180.0f) * radius);
+    py = iroundf_local(cy + sinf(angle * EICAS_PI / 180.0f) * radius);
+    lineRGBA(r, cx, cy, px, py, 245, 245, 245, 255);
+
+    if ((is_n1 && value > 105.0f) || (!is_n1 && value >= 950.0f))
+        value_color = color_red();
+    else if ((is_n1 && value > 100.0f) || (!is_n1 && value >= 925.0f))
+        value_color = color_amber();
+    snprintf(text, sizeof(text), format, value);
+    draw_value_box(ui, cx + radius, cy - 7, is_n1 ? 67 : 58, text, value_color);
 }
 
 static void draw_tat(EICAS1_UI *ui, const EICAS1_Data *data)
 {
     char text[32];
-    SDL_Renderer *renderer = ui->renderer;
-
-    draw_ttf_text_center(renderer, ui->font_small, 372, 18, "TAT", color_label());
-    snprintf(text, sizeof(text), "%+05.1f C", data->tat);
-    draw_ttf_text_center(renderer, ui->font_medium, 372, 38, text, color_main());
+    draw_text(ui->renderer, ui->font_small, 50, 14, "TAT", color_cyan());
+    snprintf(text, sizeof(text), "%+.1f C", data->tat);
+    draw_text(ui->renderer, ui->font_medium, 145, 10, text, color_white());
 }
 
-static void draw_half_gauge(EICAS1_UI *ui, int cx, int cy, int radius,
-                            float value, float max_value, const char *title,
-                            const char *format)
+static void draw_engine_messages(EICAS1_UI *ui, const EICAS1_Data *data)
 {
-    SDL_Renderer *renderer = ui->renderer;
-    char text[32];
-    SDL_Color value_color = color_main();
-    float pct = value / max_value;
-    float angle;
-    int needle_x;
-    int needle_y;
-
-    if (pct < 0.0f) pct = 0.0f;
-    if (pct > 1.0f) pct = 1.0f;
-
-    arcRGBA(renderer, cx, cy, radius, 205, 335, 90, 100, 110, 255);
-    arcRGBA(renderer, cx, cy, radius - 1, 205, 335, 90, 100, 110, 255);
-    arcRGBA(renderer, cx, cy, radius - 2, 205, 335, 45, 55, 65, 255);
-
-    if (strcmp(title, "N1") == 0 && value > 100.0f) {
-        value_color = value > 105.0f ? color_danger() : color_warning();
-    } else if (strcmp(title, "EGT C") == 0) {
-        if (value > 1000.0f) {
-            value_color = color_danger();
-        } else if (value > 900.0f) {
-            value_color = color_warning();
-        }
+    const int lefts[2] = {430, 577};
+    const unsigned int alerts[2] = {data->alert_left, data->alert_right};
+    const char *names[2] = {"ENG1", "ENG2"};
+    for (int i = 0; i < 2; ++i) {
+        int x = lefts[i];
+        rectangleRGBA(ui->renderer, x, 44, x + 128, 118, 48, 39, 48, 255);
+        lineRGBA(ui->renderer, x, 68, x + 128, 68, 48, 39, 48, 255);
+        lineRGBA(ui->renderer, x, 93, x + 128, 93, 48, 39, 48, 255);
+        draw_text_center(ui->renderer, ui->font_small, x + 64, 27, names[i], color_cyan());
+        /* These are the three annunciations fitted to the 737NG primary engine display. */
+        if (!((i == 0) ? data->engine_running_left : data->engine_running_right) &&
+            ((i == 0) ? data->n1_left : data->n1_right) > 2.0f)
+            draw_text_center(ui->renderer, ui->font_small, x + 64, 47, "START VALVE OPEN", color_amber());
+        (void)alerts;
+        if (!((i == 0) ? data->engine_running_left : data->engine_running_right))
+            draw_text_center(ui->renderer, ui->font_small, x + 64, 96, "LOW OIL PRESSURE", color_amber());
     }
-
-    for (int i = 0; i <= 10; ++i) {
-        float a = (205.0f + (float)i * 13.0f) * EICAS1_PI / 180.0f;
-        int major = (i % 5) == 0;
-        int numbered = (i % 5) == 0;
-        int x1 = iroundf_local((float)cx + cosf(a) * (float)(radius - (major ? 22 : 14)));
-        int y1 = iroundf_local((float)cy + sinf(a) * (float)(radius - (major ? 22 : 14)));
-        int x2 = iroundf_local((float)cx + cosf(a) * (float)radius);
-        int y2 = iroundf_local((float)cy + sinf(a) * (float)radius);
-        lineRGBA(renderer, x1, y1, x2, y2, 220, 230, 235, 255);
-        if (numbered) {
-            int label_value = iroundf_local(max_value * (float)i / 10.0f);
-            int tx = iroundf_local((float)cx + cosf(a) * (float)(radius - 30));
-            int ty = iroundf_local((float)cy + sinf(a) * (float)(radius - 30)) - 7;
-            snprintf(text, sizeof(text), "%d", label_value);
-            draw_ttf_text_center(renderer, ui->font_small, tx, ty, text, color_aux());
-        }
-    }
-
-    angle = (205.0f + pct * 130.0f) * EICAS1_PI / 180.0f;
-    needle_x = iroundf_local((float)cx + cosf(angle) * (float)(radius - 24));
-    needle_y = iroundf_local((float)cy + sinf(angle) * (float)(radius - 24));
-    thickLineRGBA(renderer, cx, cy, needle_x, needle_y, 4, 235, 240, 245, 255);
-    filledTrigonRGBA(renderer,
-                     needle_x,
-                     needle_y,
-                     iroundf_local((float)needle_x - cosf(angle) * 8.0f - sinf(angle) * 5.0f),
-                     iroundf_local((float)needle_y - sinf(angle) * 8.0f + cosf(angle) * 5.0f),
-                     iroundf_local((float)needle_x - cosf(angle) * 8.0f + sinf(angle) * 5.0f),
-                     iroundf_local((float)needle_y - sinf(angle) * 8.0f - cosf(angle) * 5.0f),
-                     235, 240, 245, 255);
-    filledCircleRGBA(renderer, cx, cy, 5, 235, 240, 245, 255);
-
-    draw_ttf_text_center(renderer, ui->font_medium, cx, cy - radius - 18, title, color_label());
-    snprintf(text, sizeof(text), format, value);
-    roundedBoxRGBA(renderer, cx - 48, cy + 22, cx + 48, cy + 54, 4, 2, 5, 8, 230);
-    roundedRectangleRGBA(renderer, cx - 48, cy + 22, cx + 48, cy + 54, 4, 90, 100, 110, 255);
-    draw_ttf_text_center(renderer, ui->font_medium, cx, cy + 25, text, value_color);
-}
-
-static void draw_value_box(EICAS1_UI *ui, int cx, int y, float value, const char *format)
-{
-    char text[32];
-    SDL_Renderer *renderer = ui->renderer;
-
-    snprintf(text, sizeof(text), format, value);
-    roundedBoxRGBA(renderer, cx - 58, y, cx + 58, y + 34, 4, 2, 5, 8, 230);
-    roundedRectangleRGBA(renderer, cx - 58, y, cx + 58, y + 34, 4, 90, 100, 110, 255);
-    draw_ttf_text_center(renderer, ui->font_medium, cx, y + 4, text, color_main());
-}
-
-static void draw_ff(EICAS1_UI *ui, const EICAS1_Data *data)
-{
-    SDL_Renderer *renderer = ui->renderer;
-
-    draw_ttf_text_center(renderer, ui->font_medium, 282, 476, "FF", color_label());
-    draw_ttf_text_center(renderer, ui->font_small, 282, 498, "LB/H x1000", color_aux());
-    draw_value_box(ui, 185, 520, data->ff_left, "%04.1f");
-    draw_value_box(ui, 380, 520, data->ff_right, "%04.1f");
-    draw_ttf_text_center(renderer, ui->font_small, 185, 558, "L", color_label());
-    draw_ttf_text_center(renderer, ui->font_small, 380, 558, "R", color_label());
-}
-
-static void draw_engine_message(EICAS1_UI *ui, int cx, int y, const char *message, SDL_Color color)
-{
-    if (message && message[0]) {
-        draw_ttf_text_center(ui->renderer, ui->font_small, cx, y, message, color);
-    }
-}
-
-static void engine_status_text(unsigned int alerts, char *text, size_t size)
-{
-    const char *separator = "";
-    text[0] = '\0';
-#define APPEND_ALERT(flag, label) do { if (alerts & (flag)) { \
-    snprintf(text + strlen(text), size - strlen(text), "%s%s", separator, (label)); \
-    separator = "/"; } } while (0)
-    APPEND_ALERT(EICAS1_ALERT_N1_HIGH, "N1");
-    APPEND_ALERT(EICAS1_ALERT_EGT_HIGH, "EGT");
-    APPEND_ALERT(EICAS1_ALERT_FF_LOW, "FF");
-    APPEND_ALERT(EICAS1_ALERT_FUEL_LOW, "FUEL");
-#undef APPEND_ALERT
-    if (!text[0]) snprintf(text, size, "NORMAL");
-}
-
-static void draw_engine_status(EICAS1_UI *ui, const EICAS1_Data *data)
-{
-    SDL_Renderer *renderer = ui->renderer;
-    char left_status[32];
-    char right_status[32];
-
-    engine_status_text(data->alert_left, left_status, sizeof(left_status));
-    engine_status_text(data->alert_right, right_status, sizeof(right_status));
-
-    roundedBoxRGBA(renderer, 552, 82, 626, 168, 5, 5, 8, 11, 220);
-    roundedBoxRGBA(renderer, 638, 82, 712, 168, 5, 5, 8, 11, 220);
-    roundedRectangleRGBA(renderer, 552, 82, 626, 168, 5, 90, 100, 110, 255);
-    roundedRectangleRGBA(renderer, 638, 82, 712, 168, 5, 90, 100, 110, 255);
-    draw_ttf_text_center(renderer, ui->font_small, 589, 98, "ENG1", color_label());
-    draw_ttf_text_center(renderer, ui->font_small, 675, 98, "ENG2", color_label());
-    lineRGBA(renderer, 560, 122, 618, 122, 70, 82, 94, 255);
-    lineRGBA(renderer, 646, 122, 704, 122, 70, 82, 94, 255);
-    draw_engine_message(ui, 589, 132, left_status,
-                        data->alert_left ? color_warning() : color_main());
-    draw_engine_message(ui, 675, 132, right_status,
-                        data->alert_right ? color_warning() : color_main());
 }
 
 static void draw_fuel(EICAS1_UI *ui, const EICAS1_Data *data)
 {
-    SDL_Renderer *renderer = ui->renderer;
     char text[32];
     float total = data->fuel_left + data->fuel_center + data->fuel_right;
-
-    roundedBoxRGBA(renderer, 456, 500, 718, 688, 5, 5, 8, 11, 230);
-    roundedRectangleRGBA(renderer, 456, 500, 718, 688, 5, 90, 100, 110, 255);
-    draw_ttf_text_center(renderer, ui->font_small, 587, 516, "FUEL QTY", color_label());
-    draw_ttf_text_center(renderer, ui->font_small, 587, 538, "LBS x 1000", color_aux());
-
-    draw_ttf_text_center(renderer, ui->font_small, 510, 572, "L", color_label());
-    draw_ttf_text_center(renderer, ui->font_small, 587, 572, "C", color_label());
-    draw_ttf_text_center(renderer, ui->font_small, 664, 572, "R", color_label());
+    SDL_Renderer *r = ui->renderer;
+    lineRGBA(r, 439, 580, 468, 580, 0, 160, 170, 255);
+    lineRGBA(r, 439, 580, 439, 649, 0, 160, 170, 255);
+    lineRGBA(r, 439, 649, 694, 649, 0, 160, 170, 255);
+    lineRGBA(r, 694, 580, 694, 649, 0, 160, 170, 255);
+    lineRGBA(r, 665, 580, 694, 580, 0, 160, 170, 255);
+    draw_text_center(r, ui->font_small, 566, 575, "FUEL QTY-LBS X 1000", color_cyan());
     snprintf(text, sizeof(text), "%.1f", data->fuel_left);
-    draw_ttf_text_center(renderer, ui->font_medium, 510, 596, text,
-                         data->fuel_left < 1.0f ? color_warning() : color_main());
+    draw_text_center(r, ui->font_medium, 510, 599, text, color_white());
     snprintf(text, sizeof(text), "%.1f", data->fuel_center);
-    draw_ttf_text_center(renderer, ui->font_medium, 587, 596, text,
-                         data->fuel_center < 1.0f ? color_warning() : color_main());
+    draw_text_center(r, ui->font_medium, 566, 599, text, color_white());
     snprintf(text, sizeof(text), "%.1f", data->fuel_right);
-    draw_ttf_text_center(renderer, ui->font_medium, 664, 596, text,
-                         data->fuel_right < 1.0f ? color_warning() : color_main());
-    lineRGBA(renderer, 486, 636, 688, 636, 90, 100, 110, 255);
-    snprintf(text, sizeof(text), "TOTAL %.1f", total);
-    draw_ttf_text_center(renderer, ui->font_medium, 587, 650, text,
-                         total < 5.0f ? color_warning() : color_main());
-}
-
-static void draw_status(EICAS1_UI *ui, const EICAS1_Data *data)
-{
-    char text[48];
-    snprintf(text, sizeof(text), "FPS %02d  %s", g_fps_value, source_text(data->data_source));
-    draw_ttf_text(ui->renderer, ui->font_small, 18, 704, text, color_aux());
+    draw_text_center(r, ui->font_medium, 622, 599, text, color_white());
+    draw_text(r, ui->font_small, 477, 661, "TOTAL", color_cyan());
+    snprintf(text, sizeof(text), "%.1f", total);
+    draw_text(r, ui->font_medium, 527, 657, text, color_white());
 }
 
 int EICAS1_UI_Init(EICAS1_UI *ui)
 {
-    if (!ui) {
-        return -1;
-    }
-
+    if (!ui) return -1;
     memset(ui, 0, sizeof(*ui));
     ui->window_width = EICAS1_LOGIC_WIDTH;
     ui->window_height = EICAS1_LOGIC_HEIGHT;
-
-    ui->window = SDL_CreateWindow("EICAS1", SDL_WINDOWPOS_CENTERED, SDL_WINDOWPOS_CENTERED,
-                                  EICAS1_LOGIC_WIDTH, EICAS1_LOGIC_HEIGHT,
-                                  SDL_WINDOW_SHOWN | SDL_WINDOW_RESIZABLE);
-    if (!ui->window) {
-        printf("EICAS1 window creation failed: %s\n", SDL_GetError());
-        return -1;
-    }
-
+    ui->window = SDL_CreateWindow("B737-800 UPPER ENGINE DISPLAY",
+        SDL_WINDOWPOS_CENTERED, SDL_WINDOWPOS_CENTERED,
+        EICAS1_LOGIC_WIDTH, EICAS1_LOGIC_HEIGHT, SDL_WINDOW_SHOWN | SDL_WINDOW_RESIZABLE);
+    if (!ui->window) return -1;
     ui->renderer = SDL_CreateRenderer(ui->window, -1,
-                                      SDL_RENDERER_ACCELERATED |
-                                      SDL_RENDERER_PRESENTVSYNC |
-                                      SDL_RENDERER_TARGETTEXTURE);
+        SDL_RENDERER_ACCELERATED | SDL_RENDERER_PRESENTVSYNC | SDL_RENDERER_TARGETTEXTURE);
     ui->vsync_enabled = ui->renderer != NULL;
     if (!ui->renderer) {
         ui->renderer = SDL_CreateRenderer(ui->window, -1,
-                                          SDL_RENDERER_ACCELERATED |
-                                          SDL_RENDERER_TARGETTEXTURE);
+            SDL_RENDERER_ACCELERATED | SDL_RENDERER_TARGETTEXTURE);
         ui->vsync_enabled = 0;
     }
-    if (!ui->renderer) {
-        printf("EICAS1 renderer creation failed: %s\n", SDL_GetError());
-        EICAS1_UI_Destroy(ui);
-        return -1;
-    }
-
-    SDL_SetHint(SDL_HINT_RENDER_SCALE_QUALITY, "linear");
+    if (!ui->renderer) { EICAS1_UI_Destroy(ui); return -1; }
     ui->logic_texture = SDL_CreateTexture(ui->renderer, SDL_PIXELFORMAT_RGBA8888,
-                                          SDL_TEXTUREACCESS_TARGET,
-                                          EICAS1_LOGIC_WIDTH, EICAS1_LOGIC_HEIGHT);
-    if (!ui->logic_texture) {
-        printf("EICAS1 logic texture creation failed: %s\n", SDL_GetError());
-        EICAS1_UI_Destroy(ui);
-        return -1;
-    }
-
-    if (load_fonts(ui) != 0) {
-        EICAS1_UI_Destroy(ui);
-        return -1;
-    }
-
+        SDL_TEXTUREACCESS_TARGET, EICAS1_LOGIC_WIDTH, EICAS1_LOGIC_HEIGHT);
+    if (!ui->logic_texture || load_fonts(ui) != 0) { EICAS1_UI_Destroy(ui); return -1; }
     SDL_SetTextureBlendMode(ui->logic_texture, SDL_BLENDMODE_BLEND);
-    EICAS1_UI_UpdateRenderRect(ui);
+    update_render_rect(ui);
     return 0;
 }
 
 void EICAS1_UI_HandleEvent(EICAS1_UI *ui, SDL_Event *event, int *running)
 {
-    if (!ui || !event || !running) {
-        return;
-    }
-
-    if (event->type == SDL_QUIT) {
-        *running = 0;
-    } else if (event->type == SDL_KEYDOWN && event->key.keysym.sym == SDLK_ESCAPE) {
-        *running = 0;
-    } else if (event->type == SDL_WINDOWEVENT &&
-               event->window.event == SDL_WINDOWEVENT_SIZE_CHANGED) {
+    if (!ui || !event || !running) return;
+    if (event->type == SDL_QUIT ||
+        (event->type == SDL_KEYDOWN && event->key.keysym.sym == SDLK_ESCAPE)) *running = 0;
+    else if (event->type == SDL_WINDOWEVENT && event->window.event == SDL_WINDOWEVENT_SIZE_CHANGED) {
         ui->window_width = event->window.data1;
         ui->window_height = event->window.data2;
-        EICAS1_UI_UpdateRenderRect(ui);
+        update_render_rect(ui);
     }
 }
 
 void EICAS1_UI_Render(EICAS1_UI *ui, const EICAS1_Data *data)
 {
-    if (!ui || !data || !ui->renderer || !ui->logic_texture) {
-        return;
-    }
-
-    update_fps_counter();
+    char text[32];
+    if (!ui || !data || !ui->renderer || !ui->logic_texture) return;
     SDL_SetRenderTarget(ui->renderer, ui->logic_texture);
-    SDL_SetRenderDrawColor(ui->renderer, 1, 3, 5, 255);
+    SDL_SetRenderDrawColor(ui->renderer, 0, 0, 0, 255);
     SDL_RenderClear(ui->renderer);
-
     draw_tat(ui, data);
-    draw_ttf_text_center(ui->renderer, ui->font_small, 185, 84, "L", color_label());
-    draw_ttf_text_center(ui->renderer, ui->font_small, 380, 84, "R", color_label());
-    draw_half_gauge(ui, 185, 170, 72, data->n1_left, 110.0f, "N1", "%04.1f");
-    draw_half_gauge(ui, 380, 170, 72, data->n1_right, 110.0f, "N1", "%04.1f");
-    draw_half_gauge(ui, 185, 374, 72, data->egt_left, 1000.0f, "EGT C", "%04.0f");
-    draw_half_gauge(ui, 380, 374, 72, data->egt_right, 1000.0f, "EGT C", "%04.0f");
-    draw_ff(ui, data);
-    draw_engine_status(ui, data);
+    draw_engine_gauge(ui, 87, 115, 59, data->n1_left, 110.0f, 1, "%.1f");
+    draw_engine_gauge(ui, 306, 115, 59, data->n1_right, 110.0f, 1, "%.1f");
+    draw_text_center(ui->renderer, ui->font_medium, 197, 203, "N1", color_cyan());
+    draw_engine_gauge(ui, 87, 285, 59, data->egt_left, 1000.0f, 0, "%.0f");
+    draw_engine_gauge(ui, 306, 285, 59, data->egt_right, 1000.0f, 0, "%.0f");
+    draw_text_center(ui->renderer, ui->font_medium, 197, 361, "EGT", color_cyan());
+    snprintf(text, sizeof(text), "%.2f", data->ff_left);
+    draw_value_box(ui, 87, 475, 65, text, color_white());
+    snprintf(text, sizeof(text), "%.2f", data->ff_right);
+    draw_value_box(ui, 306, 475, 65, text, color_white());
+    draw_text_center(ui->renderer, ui->font_medium, 197, 489, "FF", color_cyan());
+    draw_engine_messages(ui, data);
     draw_fuel(ui, data);
-    draw_status(ui, data);
-
-    rectangleRGBA(ui->renderer, 0, 0, EICAS1_LOGIC_WIDTH - 1, EICAS1_LOGIC_HEIGHT - 1,
-                  70, 75, 85, 255);
-
+    draw_text(ui->renderer, ui->font_small, 8, EICAS1_LOGIC_HEIGHT - 22,
+              data_source_text(data->data_source), color_cyan());
     SDL_SetRenderTarget(ui->renderer, NULL);
     SDL_SetRenderDrawColor(ui->renderer, 0, 0, 0, 255);
     SDL_RenderClear(ui->renderer);
@@ -483,41 +291,12 @@ void EICAS1_UI_Render(EICAS1_UI *ui, const EICAS1_Data *data)
 
 void EICAS1_UI_Destroy(EICAS1_UI *ui)
 {
-    TTF_Font *font_small;
-    TTF_Font *font_medium;
-    TTF_Font *font_large;
-
-    if (!ui) {
-        return;
-    }
-
-    font_small = ui->font_small;
-    font_medium = ui->font_medium;
-    font_large = ui->font_large;
-
-    if (font_small) {
-        TTF_CloseFont(font_small);
-    }
-    if (font_medium && font_medium != font_small) {
-        TTF_CloseFont(font_medium);
-    }
-    if (font_large && font_large != font_small && font_large != font_medium) {
-        TTF_CloseFont(font_large);
-    }
-    ui->font_small = NULL;
-    ui->font_medium = NULL;
-    ui->font_large = NULL;
-
-    if (ui->logic_texture) {
-        SDL_DestroyTexture(ui->logic_texture);
-        ui->logic_texture = NULL;
-    }
-    if (ui->renderer) {
-        SDL_DestroyRenderer(ui->renderer);
-        ui->renderer = NULL;
-    }
-    if (ui->window) {
-        SDL_DestroyWindow(ui->window);
-        ui->window = NULL;
-    }
+    if (!ui) return;
+    if (ui->font_small) TTF_CloseFont(ui->font_small);
+    if (ui->font_medium) TTF_CloseFont(ui->font_medium);
+    if (ui->font_large) TTF_CloseFont(ui->font_large);
+    if (ui->logic_texture) SDL_DestroyTexture(ui->logic_texture);
+    if (ui->renderer) SDL_DestroyRenderer(ui->renderer);
+    if (ui->window) SDL_DestroyWindow(ui->window);
+    memset(ui, 0, sizeof(*ui));
 }

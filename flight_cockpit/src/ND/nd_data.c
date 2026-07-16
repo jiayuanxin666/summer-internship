@@ -28,8 +28,6 @@ static FILE *g_data_file = NULL;
 static int g_file_checked = 0;
 static int g_frame = 0;
 static ND_NavDatabase g_nav_db = {0};
-static ND_MapPoint g_route[ND_MAX_ROUTE_POINTS];
-static int g_route_count = 0;
 
 static float clampf_local(float value, float min_value, float max_value)
 {
@@ -223,37 +221,6 @@ static int nav_db_push(const ND_MapPoint *point)
     return 1;
 }
 
-static int load_route_file(void)
-{
-    FILE *fp = open_first_existing("assets/KSEAKBFI.fms", "../assets/KSEAKBFI.fms");
-    char line[256];
-    int type;
-    int unused;
-    char ident[ND_IDENT_LEN];
-    double lat;
-    double lon;
-
-    g_route_count = 0;
-    if (!fp) {
-        return 0;
-    }
-
-    while (fgets(line, sizeof(line), fp) && g_route_count < ND_MAX_ROUTE_POINTS) {
-        if (sscanf(line, " %d %15s %d %lf %lf", &type, ident, &unused, &lat, &lon) == 5) {
-            ND_MapPoint *point = &g_route[g_route_count++];
-            memset(point, 0, sizeof(*point));
-            copy_ident(point->ident, sizeof(point->ident), ident);
-            copy_ident(point->name, sizeof(point->name), ident);
-            point->latitude = lat;
-            point->longitude = lon;
-            point->type = ND_POINT_ROUTE;
-        }
-    }
-
-    fclose(fp);
-    return g_route_count > 0;
-}
-
 static int load_fix_file(void)
 {
     FILE *fp = open_first_existing("assets/earth_fix.dat", "../assets/earth_fix.dat");
@@ -370,7 +337,6 @@ int ND_Data_LoadStaticResources(void)
         return 1;
     }
 
-    load_route_file();
     load_airport_file();
     load_nav_file();
     load_fix_file();
@@ -399,22 +365,6 @@ static void normalize_data(ND_Data *data)
         data->data_source = ND_DATA_SOURCE_SIM;
     }
     data->valid = 1;
-}
-
-static void copy_route_to_data(ND_Data *data)
-{
-    if (!data) {
-        return;
-    }
-
-    data->route_count = g_route_count;
-    if (data->route_count > ND_MAX_ROUTE_POINTS) {
-        data->route_count = ND_MAX_ROUTE_POINTS;
-    }
-
-    for (int i = 0; i < data->route_count; ++i) {
-        data->route[i] = g_route[i];
-    }
 }
 
 static void fill_internal_frame(ND_Data *data)
@@ -456,12 +406,11 @@ void ND_Data_Init(ND_Data *data)
     data->track = 0.0f;
     data->wind_speed = 0.0f;
     data->wind_direction = 0.0f;
-    data->next_distance_nm = 1.0f;
-    copy_ident(data->next_waypoint, sizeof(data->next_waypoint), "FREDY");
+    data->next_distance_nm = 0.0f;
+    copy_ident(data->next_waypoint, sizeof(data->next_waypoint), "----");
     data->data_source = ND_DATA_SOURCE_SIM;
     data->valid = 1;
     ND_Data_LoadStaticResources();
-    copy_route_to_data(data);
     ND_Data_UpdateNavigation(data);
 }
 
@@ -532,6 +481,95 @@ static void update_point_geometry(ND_Data *data, ND_MapPoint *point)
     point->relative_angle_deg = ND_Data_AngleDelta(data->heading, point->bearing_deg);
 }
 
+static void project_position(double latitude, double longitude, float bearing_deg,
+                             float distance_nm, double *out_latitude, double *out_longitude)
+{
+    double angular_distance = ((double)distance_nm * ND_KM_PER_NM) / ND_EARTH_RADIUS_KM;
+    double bearing = deg_to_rad((double)bearing_deg);
+    double lat1 = deg_to_rad(latitude);
+    double lon1 = deg_to_rad(longitude);
+    double lat2;
+    double lon2;
+
+    lat2 = asin(sin(lat1) * cos(angular_distance) +
+                cos(lat1) * sin(angular_distance) * cos(bearing));
+    lon2 = lon1 + atan2(sin(bearing) * sin(angular_distance) * cos(lat1),
+                        cos(angular_distance) - sin(lat1) * sin(lat2));
+
+    *out_latitude = lat2 * 180.0 / ND_PI;
+    *out_longitude = lon2 * 180.0 / ND_PI;
+    while (*out_longitude > 180.0) *out_longitude -= 360.0;
+    while (*out_longitude < -180.0) *out_longitude += 360.0;
+}
+
+static void update_prediction(ND_Data *data)
+{
+    static const int seconds[ND_PREDICTION_POINTS] = {30, 60, 90};
+
+    data->prediction_count = 0;
+    if (data->ground_speed < 1.0f) {
+        return;
+    }
+
+    for (int i = 0; i < ND_PREDICTION_POINTS; ++i) {
+        ND_MapPoint *point = &data->prediction[data->prediction_count++];
+        float distance_nm = data->ground_speed * (float)seconds[i] / 3600.0f;
+        memset(point, 0, sizeof(*point));
+        snprintf(point->ident, sizeof(point->ident), "%dS", seconds[i]);
+        project_position(data->latitude, data->longitude, data->track, distance_nm,
+                         &point->latitude, &point->longitude);
+        point->type = ND_POINT_WAYPOINT;
+        update_point_geometry(data, point);
+    }
+}
+
+static void update_cross_track_error(ND_Data *data)
+{
+    double cos_lat = cos(deg_to_rad(data->latitude));
+    double best_distance = 9999.0;
+
+    data->cross_track_valid = 0;
+    data->cross_track_error_nm = 0.0f;
+    data->route_deviation_level = 0;
+    if (data->route_count < 2) {
+        return;
+    }
+
+    for (int i = 0; i + 1 < data->route_count; ++i) {
+        double ax = (data->route[i].longitude - data->longitude) * 60.0 * cos_lat;
+        double ay = (data->route[i].latitude - data->latitude) * 60.0;
+        double bx = (data->route[i + 1].longitude - data->longitude) * 60.0 * cos_lat;
+        double by = (data->route[i + 1].latitude - data->latitude) * 60.0;
+        double dx = bx - ax;
+        double dy = by - ay;
+        double length_sq = dx * dx + dy * dy;
+        double t = 0.0;
+        double closest_x;
+        double closest_y;
+        double distance;
+
+        if (length_sq > 0.000001) {
+            t = -(ax * dx + ay * dy) / length_sq;
+            if (t < 0.0) t = 0.0;
+            if (t > 1.0) t = 1.0;
+        }
+        closest_x = ax + t * dx;
+        closest_y = ay + t * dy;
+        distance = sqrt(closest_x * closest_x + closest_y * closest_y);
+        if (distance < best_distance) {
+            best_distance = distance;
+        }
+    }
+
+    data->cross_track_valid = 1;
+    data->cross_track_error_nm = (float)best_distance;
+    if (data->cross_track_error_nm >= 5.0f) {
+        data->route_deviation_level = 2;
+    } else if (data->cross_track_error_nm >= 2.0f) {
+        data->route_deviation_level = 1;
+    }
+}
+
 static int point_is_better(const ND_MapPoint *candidate, const ND_MapPoint *stored)
 {
     if (candidate->distance_nm < stored->distance_nm) {
@@ -595,9 +633,12 @@ void ND_Data_UpdateNavigation(ND_Data *data)
         copy_ident(data->next_waypoint, sizeof(data->next_waypoint), data->route[best_next].ident);
         data->next_distance_nm = best_next_distance;
     } else {
-        copy_ident(data->next_waypoint, sizeof(data->next_waypoint), "FREDY");
-        data->next_distance_nm = 1.0f;
+        copy_ident(data->next_waypoint, sizeof(data->next_waypoint), "----");
+        data->next_distance_nm = 0.0f;
     }
+
+    update_prediction(data);
+    update_cross_track_error(data);
 
     data->nearby_count = 0;
     if (g_nav_db.buckets && g_nav_db.next_indices) {
@@ -651,16 +692,65 @@ void ND_Data_Smooth(ND_Data *display, const ND_Data *target, float alpha)
     display->next_distance_nm = smooth_linear(display->next_distance_nm, target->next_distance_nm, alpha);
     copy_ident(display->next_waypoint, sizeof(display->next_waypoint), target->next_waypoint);
     display->route_count = target->route_count;
+    display->route_from_fmc = target->route_from_fmc;
+    display->route_revision = target->route_revision;
     display->nearby_count = target->nearby_count;
+    display->prediction_count = target->prediction_count;
     for (int i = 0; i < target->route_count && i < ND_MAX_ROUTE_POINTS; ++i) {
         display->route[i] = target->route[i];
     }
     for (int i = 0; i < target->nearby_count && i < ND_MAX_NEARBY_POINTS; ++i) {
         display->nearby[i] = target->nearby[i];
     }
+    for (int i = 0; i < target->prediction_count && i < ND_PREDICTION_POINTS; ++i) {
+        display->prediction[i] = target->prediction[i];
+    }
+    display->cross_track_error_nm = smooth_linear(display->cross_track_error_nm,
+                                                   target->cross_track_error_nm, alpha);
+    display->cross_track_valid = target->cross_track_valid;
+    display->route_deviation_level = target->route_deviation_level;
     display->valid = target->valid;
     display->data_source = target->data_source;
     normalize_data(display);
+}
+
+int ND_Data_RunSelfTest(void)
+{
+    ND_Data data;
+    float one_degree_nm;
+    float east_bearing;
+    int ok = 1;
+
+    ok = ok && fabsf(ND_Data_NormalizeHeading(-10.0f) - 350.0f) < 0.01f;
+    ok = ok && fabsf(ND_Data_AngleDelta(350.0f, 10.0f) - 20.0f) < 0.01f;
+    one_degree_nm = ND_Data_DistanceNm(0.0, 0.0, 0.0, 1.0);
+    east_bearing = ND_Data_BearingDeg(0.0, 0.0, 0.0, 1.0);
+    ok = ok && one_degree_nm > 59.9f && one_degree_nm < 60.2f;
+    ok = ok && fabsf(east_bearing - 90.0f) < 0.01f;
+
+    ND_Data_Init(&data);
+    ok = ok && data.valid && data.route_count == 0;
+    ND_Data_UpdateNavigation(&data);
+    ok = ok && strcmp(data.next_waypoint, "----") == 0;
+    copy_ident(data.route[0].ident, sizeof(data.route[0].ident), "TEST1");
+    data.route[0].latitude = data.latitude + 0.05;
+    data.route[0].longitude = data.longitude;
+    data.route[0].type = ND_POINT_ROUTE;
+    copy_ident(data.route[1].ident, sizeof(data.route[1].ident), "TEST2");
+    data.route[1].latitude = data.latitude + 0.10;
+    data.route[1].longitude = data.longitude;
+    data.route[1].type = ND_POINT_ROUTE;
+    data.route_count = 2;
+    ND_Data_UpdateNavigation(&data);
+    ok = ok && strcmp(data.next_waypoint, "TEST1") == 0;
+    ok = ok && data.nearby_count <= ND_MAX_NEARBY_POINTS;
+    for (int i = 0; i < data.nearby_count; ++i) {
+        ok = ok && data.nearby[i].distance_nm <= ND_VISIBLE_RANGE_NM + 0.01f;
+        ok = ok && fabsf(data.nearby[i].relative_angle_deg) <= ND_VISIBLE_ANGLE_DEG + 0.01f;
+    }
+
+    ND_Data_Close();
+    return ok;
 }
 
 void ND_Data_Close(void)
@@ -685,5 +775,4 @@ void ND_Data_Close(void)
     g_nav_db.count = 0;
     g_nav_db.capacity = 0;
     g_nav_db.loaded = 0;
-    g_route_count = 0;
 }

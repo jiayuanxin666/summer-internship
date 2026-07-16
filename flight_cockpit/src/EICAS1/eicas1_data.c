@@ -2,6 +2,7 @@
 #include <SDL2/SDL.h>
 #include <math.h>
 #include <stdio.h>
+#include <stdlib.h>
 #include <string.h>
 
 #ifdef ENABLE_XPLANE
@@ -76,14 +77,20 @@ static void normalize_data(EICAS1_Data *data)
     data->fuel_center = clampf_local(finite_or(data->fuel_center, 0.0f), 0.0f, 999.9f);
     data->fuel_left = clampf_local(finite_or(data->fuel_left, 0.0f), 0.0f, 999.9f);
     data->fuel_right = clampf_local(finite_or(data->fuel_right, 0.0f), 0.0f, 999.9f);
-    data->alert_left = (data->n1_left > 100.0f ? EICAS1_ALERT_N1_HIGH : 0u) |
-                       (data->egt_left >= 900.0f ? EICAS1_ALERT_EGT_HIGH : 0u) |
-                       (data->ff_left < 0.5f ? EICAS1_ALERT_FF_LOW : 0u) |
-                       (data->fuel_left < 1.0f ? EICAS1_ALERT_FUEL_LOW : 0u);
-    data->alert_right = (data->n1_right > 100.0f ? EICAS1_ALERT_N1_HIGH : 0u) |
-                        (data->egt_right >= 900.0f ? EICAS1_ALERT_EGT_HIGH : 0u) |
-                        (data->ff_right < 0.5f ? EICAS1_ALERT_FF_LOW : 0u) |
-                        (data->fuel_right < 1.0f ? EICAS1_ALERT_FUEL_LOW : 0u);
+    data->engine_running_left = data->engine_running_left != 0;
+    data->engine_running_right = data->engine_running_right != 0;
+    data->alert_left = (data->fuel_left < 1.0f ? EICAS1_ALERT_FUEL_LOW : 0u) |
+        (data->engine_running_left
+            ? (data->n1_left > 100.0f ? EICAS1_ALERT_N1_HIGH : 0u) |
+              (data->egt_left >= 900.0f ? EICAS1_ALERT_EGT_HIGH : 0u) |
+              (data->ff_left < 0.5f ? EICAS1_ALERT_FF_LOW : 0u)
+            : 0u);
+    data->alert_right = (data->fuel_right < 1.0f ? EICAS1_ALERT_FUEL_LOW : 0u) |
+        (data->engine_running_right
+            ? (data->n1_right > 100.0f ? EICAS1_ALERT_N1_HIGH : 0u) |
+              (data->egt_right >= 900.0f ? EICAS1_ALERT_EGT_HIGH : 0u) |
+              (data->ff_right < 0.5f ? EICAS1_ALERT_FF_LOW : 0u)
+            : 0u);
     data->valid = 1;
 }
 
@@ -106,6 +113,8 @@ static void fill_internal_frame(EICAS1_Data *data)
     data->fuel_center = 5.0f - (float)g_frame * 0.0005f;
     data->fuel_left = 4.0f - (float)g_frame * 0.0004f;
     data->fuel_right = 4.0f - (float)g_frame * 0.0004f;
+    data->engine_running_left = 1;
+    data->engine_running_right = 1;
     data->data_source = EICAS1_DATA_SOURCE_SIM;
     normalize_data(data);
     ++g_frame;
@@ -128,6 +137,8 @@ void EICAS1_Data_Init(EICAS1_Data *data)
     data->fuel_center = 5.0f;
     data->fuel_left = 4.0f;
     data->fuel_right = 4.0f;
+    data->engine_running_left = 1;
+    data->engine_running_right = 1;
     data->data_source = EICAS1_DATA_SOURCE_SIM;
     normalize_data(data);
 }
@@ -184,6 +195,8 @@ int EICAS1_Data_LoadNextFrame(EICAS1_Data *data)
         data->fuel_left = fuel_left / 1000.0f;
         data->fuel_center = fuel_center / 1000.0f;
         data->fuel_right = fuel_right / 1000.0f;
+        data->engine_running_left = n1_left > 5.0f;
+        data->engine_running_right = n1_right > 5.0f;
         data->data_source = EICAS1_DATA_SOURCE_FILE;
         normalize_data(data);
         g_parse_failures = 0;
@@ -212,6 +225,8 @@ void EICAS1_Data_Smooth(EICAS1_Data *display, const EICAS1_Data *target, float a
     display->fuel_center = smooth_linear(display->fuel_center, target->fuel_center, alpha);
     display->fuel_left = smooth_linear(display->fuel_left, target->fuel_left, alpha);
     display->fuel_right = smooth_linear(display->fuel_right, target->fuel_right, alpha);
+    display->engine_running_left = target->engine_running_left;
+    display->engine_running_right = target->engine_running_right;
     display->valid = target->valid;
     display->data_source = target->data_source;
     normalize_data(display);
@@ -230,35 +245,76 @@ void EICAS1_Data_Close(void)
 
 #ifdef ENABLE_XPLANE
 
-#define EICAS1_XPLANE_DREF_COUNT 5
+#define EICAS1_XPLANE_DREF_COUNT 6
+#define EICAS1_XPLANE_DEFAULT_PORT 49009
 #define EICAS1_KGSEC_TO_KLBH 7.936632f
 #define EICAS1_KG_TO_KLB 0.00220462262185f
 
 static XPCSocket g_xpc_socket;
 static int g_xpc_open = 0;
+static const char *g_tat_dref = NULL;
 
-static int fetch_probe(void)
+static int probe_dref(const char *dref, int minimum_count)
 {
-    const char *probe[] = {
-        "sim/weather/temperature_ambient_c"
-    };
-    float values[1][8];
+    const char *probe[] = {dref};
+    float value[8] = {0};
+    float *values[] = {value};
+    const int capacities[] = {8};
+    int counts[] = {0};
+    return getDREFsSizedCounts(g_xpc_socket, probe, capacities, 1, values, counts) &&
+           counts[0] >= minimum_count;
+}
 
-    return getDREFs(g_xpc_socket, probe, 1, values);
+static const char *xplane_host(void)
+{
+    const char *host = getenv("XPLANE_HOST");
+    return host && host[0] ? host : "127.0.0.1";
+}
+
+static unsigned short xplane_port(void)
+{
+    const char *text = getenv("XPLANE_PORT");
+    char *end = NULL;
+    unsigned long value;
+    if (!text || !text[0]) return EICAS1_XPLANE_DEFAULT_PORT;
+    value = strtoul(text, &end, 10);
+    return end && *end == '\0' && value > 0 && value <= 65535
+        ? (unsigned short)value : EICAS1_XPLANE_DEFAULT_PORT;
+}
+
+static int tank_index(const char *name, int fallback)
+{
+    const char *text = getenv(name);
+    char *end = NULL;
+    long value;
+    if (!text || !text[0]) return fallback;
+    value = strtol(text, &end, 10);
+    return end && *end == '\0' && value >= 0 && value < 9 ? (int)value : fallback;
 }
 
 int EICAS1_XPlane_Open(void)
 {
-    g_xpc_socket = openUDP("127.0.0.1");
+    g_xpc_socket = aopenUDP(xplane_host(), xplane_port(), 0);
     g_xpc_open = XPCSocket_IsOpen(g_xpc_socket);
 
     if (!g_xpc_open) {
         return 0;
     }
 
-    if (!fetch_probe()) {
+    if (!probe_dref("sim/flightmodel/engine/ENGN_N1_", 2)) {
         closeUDP(g_xpc_socket);
         g_xpc_open = 0;
+        return 0;
+    }
+
+    if (probe_dref("sim/weather/aircraft/temperature_leadingedge_deg_c", 1)) {
+        g_tat_dref = "sim/weather/aircraft/temperature_leadingedge_deg_c";
+    } else if (probe_dref("sim/weather/temperature_le_c", 1)) {
+        g_tat_dref = "sim/weather/temperature_le_c";
+    } else {
+        closeUDP(g_xpc_socket);
+        g_xpc_open = 0;
+        g_tat_dref = NULL;
         return 0;
     }
 
@@ -267,27 +323,38 @@ int EICAS1_XPlane_Open(void)
 
 int EICAS1_XPlane_FetchData(EICAS1_Data *data)
 {
-    static const char *drefs[EICAS1_XPLANE_DREF_COUNT] = {
-        "sim/weather/temperature_ambient_c",
+    const char *drefs[EICAS1_XPLANE_DREF_COUNT] = {
+        g_tat_dref,
         "sim/flightmodel/engine/ENGN_N1_",
-        "sim/flightmodel/engine/ENGN_EGT_c",
+        "sim/cockpit2/engine/indicators/EGT_deg_C",
         "sim/cockpit2/engine/indicators/fuel_flow_kg_sec",
-        "sim/flightmodel/weight/m_fuel"
+        "sim/flightmodel/weight/m_fuel",
+        "sim/flightmodel/engine/ENGN_running"
     };
     float tat[1] = {0};
     float n1[8] = {0};
     float egt[8] = {0};
     float ff[8] = {0};
     float fuel[9] = {0};
-    float *values[] = {tat, n1, egt, ff, fuel};
-    const int capacities[] = {1, 8, 8, 8, 9};
+    float running[8] = {0};
+    float *values[] = {tat, n1, egt, ff, fuel, running};
+    const int capacities[] = {1, 8, 8, 8, 9, 8};
+    int counts[EICAS1_XPLANE_DREF_COUNT] = {0};
+    int left_index = tank_index("EICAS1_FUEL_LEFT_INDEX", 0);
+    int center_index = tank_index("EICAS1_FUEL_CENTER_INDEX", 1);
+    int right_index = tank_index("EICAS1_FUEL_RIGHT_INDEX", 2);
 
-    if (!data || !g_xpc_open) {
+    if (!data || !g_xpc_open || !g_tat_dref) {
         return 0;
     }
 
-    if (!getDREFsSized(g_xpc_socket, drefs, capacities,
-                       EICAS1_XPLANE_DREF_COUNT, values)) {
+    if (!getDREFsSizedCounts(g_xpc_socket, drefs, capacities,
+                             EICAS1_XPLANE_DREF_COUNT, values, counts)) {
+        return 0;
+    }
+
+    if (counts[0] < 1 || counts[1] < 2 || counts[2] < 2 || counts[3] < 2 || counts[5] < 2 ||
+        counts[4] <= left_index || counts[4] <= center_index || counts[4] <= right_index) {
         return 0;
     }
 
@@ -296,9 +363,11 @@ int EICAS1_XPlane_FetchData(EICAS1_Data *data)
     data->egt_left = egt[0]; data->egt_right = egt[1];
     data->ff_left = ff[0] * EICAS1_KGSEC_TO_KLBH;
     data->ff_right = ff[1] * EICAS1_KGSEC_TO_KLBH;
-    data->fuel_left = fuel[0] * EICAS1_KG_TO_KLB;
-    data->fuel_center = fuel[1] * EICAS1_KG_TO_KLB;
-    data->fuel_right = fuel[2] * EICAS1_KG_TO_KLB;
+    data->fuel_left = fuel[left_index] * EICAS1_KG_TO_KLB;
+    data->fuel_center = fuel[center_index] * EICAS1_KG_TO_KLB;
+    data->fuel_right = fuel[right_index] * EICAS1_KG_TO_KLB;
+    data->engine_running_left = running[0] >= 0.5f;
+    data->engine_running_right = running[1] >= 0.5f;
     data->data_source = EICAS1_DATA_SOURCE_XPLANE;
     normalize_data(data);
     return 1;
@@ -309,6 +378,7 @@ void EICAS1_XPlane_Close(void)
     if (g_xpc_open) {
         closeUDP(g_xpc_socket);
         g_xpc_open = 0;
+        g_tat_dref = NULL;
     }
 }
 

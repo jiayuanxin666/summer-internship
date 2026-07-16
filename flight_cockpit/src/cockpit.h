@@ -5,7 +5,7 @@
 
 #define COCKPIT_IMAGE_WIDTH 8026
 #define COCKPIT_IMAGE_HEIGHT 3136
-#define COCKPIT_MODULE_COUNT 9
+#define COCKPIT_MODULE_COUNT 8
 
 typedef struct CockpitApp CockpitApp;
 

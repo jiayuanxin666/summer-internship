@@ -105,6 +105,7 @@ int main(int argc, char *argv[])
     int previous_source = -1;
 #ifdef ENABLE_XPLANE
     HANDLE data_thread = NULL;
+    Uint32 last_xplane_frame_tick = 0;
 #endif
 
     (void)argc;
@@ -165,9 +166,13 @@ int main(int argc, char *argv[])
             if (online && g_data_ready) {
                 raw_data = g_shared_data;
                 g_data_ready = 0;
+                last_xplane_frame_tick = SDL_GetTicks();
             }
             LeaveCriticalSection(&g_data_lock);
             if (!online) {
+                PFD_Data_LoadNextFrame(&raw_data);
+            } else if (last_xplane_frame_tick == 0 ||
+                       SDL_GetTicks() - last_xplane_frame_tick > 250) {
                 PFD_Data_LoadNextFrame(&raw_data);
             }
         } else {

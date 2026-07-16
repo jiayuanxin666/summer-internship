@@ -1,6 +1,8 @@
 #include "fmc_data.h"
 #include <SDL2/SDL.h>
 #include <ctype.h>
+#include <errno.h>
+#include <math.h>
 #include <stdio.h>
 #include <stdlib.h>
 #include <string.h>
@@ -155,6 +157,21 @@ static const FMC_NavPoint *avl_find(const FMC_AvlNode *root, const char *ident)
     return NULL;
 }
 
+static FMC_NavPoint *avl_find_mutable(FMC_AvlNode *root, const char *ident)
+{
+    char normalized[FMC_IDENT_LEN];
+    uppercase_copy(normalized, sizeof(normalized), ident);
+
+    while (root) {
+        int compare = strcmp(normalized, root->point.ident);
+        if (compare == 0) {
+            return &root->point;
+        }
+        root = compare < 0 ? root->left : root->right;
+    }
+    return NULL;
+}
+
 static void avl_destroy(FMC_AvlNode *root)
 {
     if (!root) {
@@ -215,6 +232,18 @@ static void insert_point(FMC_AvlNode **root, int *count, const char *ident,
     }
 }
 
+static void upsert_point(FMC_AvlNode **root, int *count, const char *ident,
+                         double latitude, double longitude)
+{
+    FMC_NavPoint *existing = avl_find_mutable(*root, ident);
+    if (existing) {
+        existing->latitude = latitude;
+        existing->longitude = longitude;
+        return;
+    }
+    insert_point(root, count, ident, latitude, longitude);
+}
+
 static void load_airports(FMC_Data *data)
 {
     FILE *file = open_resource("apt.dat");
@@ -233,12 +262,10 @@ static void load_airports(FMC_Data *data)
         fclose(file);
     }
 
-    if (!FMC_Data_FindAirport(data, "KSEA")) {
-        insert_point(&data->airport_root, &data->airport_count, "KSEA", 47.4489, -122.3094);
-    }
-    if (!FMC_Data_FindAirport(data, "KBFI")) {
-        insert_point(&data->airport_root, &data->airport_count, "KBFI", 47.5401, -122.3094);
-    }
+    /* The supplied training database contains duplicate/synthetic identifiers.
+     * Keep the documented Seattle demo route deterministic for FMC-to-ND tests. */
+    upsert_point(&data->airport_root, &data->airport_count, "KSEA", 47.4489, -122.3094);
+    upsert_point(&data->airport_root, &data->airport_count, "KBFI", 47.5401, -122.3094);
 }
 
 static void load_fixes(FMC_Data *data)
@@ -258,11 +285,11 @@ static void load_fixes(FMC_Data *data)
         fclose(file);
     }
 
-    insert_point(&data->fix_root, &data->fix_count, "FREDY", 47.5578, -122.2892);
-    insert_point(&data->fix_root, &data->fix_count, "RENTO", 47.4847, -122.2319);
-    insert_point(&data->fix_root, &data->fix_count, "TOTEM", 47.4500, -122.1833);
-    insert_point(&data->fix_root, &data->fix_count, "BOTLL", 47.4158, -122.1358);
-    insert_point(&data->fix_root, &data->fix_count, "KIRBY", 47.3808, -122.0875);
+    upsert_point(&data->fix_root, &data->fix_count, "FREDY", 47.5578, -122.2892);
+    upsert_point(&data->fix_root, &data->fix_count, "RENTO", 47.4847, -122.2319);
+    upsert_point(&data->fix_root, &data->fix_count, "TOTEM", 47.4500, -122.1833);
+    upsert_point(&data->fix_root, &data->fix_count, "BOTLL", 47.4158, -122.1358);
+    upsert_point(&data->fix_root, &data->fix_count, "KIRBY", 47.3808, -122.0875);
 }
 
 int FMC_Data_Init(FMC_Data *data)
@@ -345,6 +372,7 @@ static int set_airport(FMC_Data *data, const char *ident, int origin)
     FMC_Data_ClearScratchpad(data);
     FMC_Data_SetMessage(data, "");
     FMC_Data_MarkModified(data);
+    FMC_Data_RefreshRouteExecState(data);
     return 1;
 }
 
@@ -367,6 +395,7 @@ int FMC_Data_SetFlightNumber(FMC_Data *data, const char *text)
     FMC_Data_ClearScratchpad(data);
     FMC_Data_SetMessage(data, "");
     FMC_Data_MarkModified(data);
+    FMC_Data_RefreshRouteExecState(data);
     return 1;
 }
 
@@ -388,6 +417,7 @@ int FMC_Data_AddRouteFix(FMC_Data *data, const char *ident)
     FMC_Data_ClearScratchpad(data);
     FMC_Data_SetMessage(data, "");
     FMC_Data_MarkModified(data);
+    FMC_Data_RefreshRouteExecState(data);
     return 1;
 }
 
@@ -453,8 +483,10 @@ static int parse_int_range(const char *text, int min_value, int max_value, int *
     if (!text || !text[0]) {
         return 0;
     }
+    errno = 0;
     parsed = strtol(text, &end, 10);
-    if (!end || *end != '\0' || parsed < min_value || parsed > max_value) {
+    if (errno != 0 || !end || *end != '\0' ||
+        parsed < min_value || parsed > max_value) {
         return 0;
     }
     if (value) {
@@ -470,8 +502,10 @@ static int parse_mach(const char *text, double *value)
     if (!text || !text[0]) {
         return 0;
     }
+    errno = 0;
     parsed = strtod(text, &end);
-    if (!end || *end != '\0' || parsed < 0.4 || parsed > 0.95) {
+    if (errno != 0 || !end || *end != '\0' || !isfinite(parsed) ||
+        parsed < 0.4 || parsed > 0.95) {
         return 0;
     }
     if (value) {
@@ -626,8 +660,10 @@ int FMC_Data_SetVpa(FMC_Data *data, const char *text)
     if (!data || !text) {
         return 0;
     }
+    errno = 0;
     value = strtod(text, &end);
-    if (!end || *end != '\0' || value < 1.0 || value > 6.0) {
+    if (errno != 0 || !end || *end != '\0' || !isfinite(value) ||
+        value < 1.0 || value > 6.0) {
         FMC_Data_SetMessage(data, "INVALID VPA");
         return 0;
     }
@@ -641,6 +677,15 @@ int FMC_Data_SetVpa(FMC_Data *data, const char *text)
 int FMC_Data_IsRouteReady(const FMC_Data *data)
 {
     return data && data->has_origin && data->has_destination && data->flight_number[0];
+}
+
+void FMC_Data_RefreshRouteExecState(FMC_Data *data)
+{
+    if (!data) {
+        return;
+    }
+    data->exec_pending = FMC_Data_IsRouteReady(data) ? 1 : 0;
+    data->synchronized = 0;
 }
 
 void FMC_Data_MarkModified(FMC_Data *data)
@@ -672,10 +717,53 @@ const FMC_ProcedureCatalog *FMC_Data_GetProcedureCatalog(const FMC_Data *data, i
             ident = data->origin.ident;
         }
     }
-    if (ident && strcmp(ident, "KBFI") == 0) {
-        return &g_kbfi_catalog;
+    return FMC_Data_GetProcedureCatalogForAirport(ident);
+}
+
+const FMC_ProcedureCatalog *FMC_Data_GetProcedureCatalogForAirport(const char *ident)
+{
+    return ident && strcmp(ident, "KBFI") == 0 ? &g_kbfi_catalog : &g_ksea_catalog;
+}
+
+int FMC_Data_ProcedureCompatible(const FMC_ProcedureCatalog *catalog, int arrival,
+                                 int procedure_index, int runway_index)
+{
+    unsigned int runway_mask = 0;
+    const char *const *procedures;
+    const char *const *runways;
+
+    if (!catalog || procedure_index < 0 || procedure_index >= 4 ||
+        runway_index < 0 || runway_index >= 4) {
+        return 0;
     }
-    return &g_ksea_catalog;
+    procedures = arrival ? catalog->arrival_procedures : catalog->departure_procedures;
+    runways = arrival ? catalog->arrival_runways : catalog->departure_runways;
+    if (!procedures[procedure_index] || !runways[runway_index]) {
+        return 0;
+    }
+
+    if (strcmp(catalog->airport, "KSEA") == 0) {
+        static const unsigned int departure_masks[3] = {
+            1u << 0, 1u << 1, (1u << 0) | (1u << 2)
+        };
+        static const unsigned int arrival_masks[3] = {
+            1u << 0, 1u << 1, 1u << 2
+        };
+        runway_mask = arrival ? arrival_masks[procedure_index]
+                               : departure_masks[procedure_index];
+    } else if (strcmp(catalog->airport, "KBFI") == 0) {
+        static const unsigned int departure_masks[3] = {
+            1u << 0, 1u << 1, 0u
+        };
+        static const unsigned int arrival_masks[3] = {
+            (1u << 0) | (1u << 1), 1u << 1, 0u
+        };
+        runway_mask = arrival ? arrival_masks[procedure_index]
+                               : departure_masks[procedure_index];
+    } else {
+        return 1;
+    }
+    return (runway_mask & (1u << runway_index)) != 0;
 }
 
 int FMC_Data_RunSelfTest(void)
@@ -688,16 +776,27 @@ int FMC_Data_RunSelfTest(void)
     ok = ok && FMC_Data_FindAirport(&data, "KSEA") != NULL;
     ok = ok && FMC_Data_FindAirport(&data, "ksea") != NULL;
     ok = ok && FMC_Data_FindFix(&data, "FREDY") != NULL;
+    ok = ok && FMC_Data_FindAirport(&data, "KSEA")->longitude < -122.0;
+    ok = ok && FMC_Data_FindFix(&data, "FREDY")->longitude < -122.0;
     ok = ok && FMC_Data_SetOrigin(&data, "KSEA");
+    ok = ok && !data.exec_pending;
     ok = ok && FMC_Data_SetDestination(&data, "KBFI");
+    ok = ok && !data.exec_pending;
     ok = ok && FMC_Data_SetFlightNumber(&data, "AAA001");
     ok = ok && FMC_Data_IsRouteReady(&data);
+    ok = ok && data.exec_pending;
     ok = ok && FMC_Data_AddRouteFix(&data, "FREDY");
     ok = ok && data.route_count == 1;
     ok = ok && FMC_Data_SetClimbSpeed(&data, "290/.76");
     ok = ok && FMC_Data_SetSpeedAltitudeLimit(&data, "250/10000");
     ok = ok && FMC_Data_SetAltitude(data.cruise_altitude, sizeof(data.cruise_altitude),
                                     "35000", 1000, 60000, 1);
+    ok = ok && !FMC_Data_SetClimbSpeed(&data, "99") &&
+         strcmp(data.message, "INVALID SPEED") == 0;
+    ok = ok && !FMC_Data_SetCruiseSpeed(&data, "nan");
+    ok = ok && !FMC_Data_SetVpa(&data, "nan");
+    ok = ok && FMC_Data_ProcedureCompatible(&g_ksea_catalog, 0, 0, 0);
+    ok = ok && !FMC_Data_ProcedureCompatible(&g_ksea_catalog, 0, 0, 1);
     FMC_Data_Destroy(&data);
     return ok;
 }

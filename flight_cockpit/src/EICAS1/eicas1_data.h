@@ -22,6 +22,8 @@ typedef struct
     float fuel_center;
     float fuel_left;
     float fuel_right;
+    int engine_running_left;
+    int engine_running_right;
     int valid;
     int data_source;
     unsigned int alert_left;

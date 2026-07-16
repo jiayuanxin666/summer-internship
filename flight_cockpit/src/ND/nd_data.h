@@ -7,6 +7,7 @@
 
 #define ND_MAX_ROUTE_POINTS 64
 #define ND_MAX_NEARBY_POINTS 96
+#define ND_PREDICTION_POINTS 3
 #define ND_IDENT_LEN 16
 #define ND_NAME_LEN 48
 
@@ -47,9 +48,17 @@ typedef struct
 
     int route_count;
     ND_MapPoint route[ND_MAX_ROUTE_POINTS];
+    int route_from_fmc;
+    unsigned int route_revision;
 
     int nearby_count;
     ND_MapPoint nearby[ND_MAX_NEARBY_POINTS];
+
+    int prediction_count;
+    ND_MapPoint prediction[ND_PREDICTION_POINTS];
+    float cross_track_error_nm;
+    int cross_track_valid;
+    int route_deviation_level;
 
     int valid;
     int data_source;
@@ -66,5 +75,6 @@ float ND_Data_NormalizeHeading(float heading);
 float ND_Data_AngleDelta(float from_deg, float to_deg);
 float ND_Data_DistanceNm(double lat1, double lon1, double lat2, double lon2);
 float ND_Data_BearingDeg(double lat1, double lon1, double lat2, double lon2);
+int ND_Data_RunSelfTest(void);
 
 #endif

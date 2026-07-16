@@ -15,6 +15,8 @@
  * 4. sim/cockpit/autopilot/heading_mag
  * 5. sim/flightmodel/position/true_airspeed
  * 6. sim/flightmodel/position/groundspeed
+ * 7. sim/weather/wind_speed_kt
+ * 8. sim/weather/wind_direction_degt
  */
 
 #ifdef ENABLE_XPLANE

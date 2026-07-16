@@ -13,6 +13,7 @@
 /* EICAS1 is a standalone executable; build it separately as build/eicas1.exe. */
 
 #ifdef ENABLE_XPLANE
+#include "../Util/xplaneConnect.h"
 #include <windows.h>
 
 static int g_data_ready = 0;
@@ -31,8 +32,12 @@ static DWORD WINAPI EICAS1_DataThread(LPVOID param)
     EICAS1_Data_Init(&local);
     connected = EICAS1_XPlane_Open();
     last_retry = SDL_GetTicks();
-    printf(connected ? "EICAS1 X-Plane connected.\n" :
-                       "EICAS1 X-Plane unavailable; using file/simulation data.\n");
+    if (connected) {
+        printf("EICAS1 X-Plane connected.\n");
+    } else {
+        printf("EICAS1 X-Plane unavailable (%s); using file/simulation data.\n",
+               XPC_GetLastErrorString());
+    }
     while (WaitForSingleObject(g_exit_event, 30) == WAIT_TIMEOUT) {
         if (connected) {
             if (EICAS1_XPlane_FetchData(&local)) {
@@ -41,7 +46,8 @@ static DWORD WINAPI EICAS1_DataThread(LPVOID param)
                 EICAS1_XPlane_Close();
                 connected = 0;
                 last_retry = SDL_GetTicks();
-                printf("EICAS1 X-Plane lost; switching to file/simulation data.\n");
+                printf("EICAS1 X-Plane lost (%s); switching to file/simulation data.\n",
+                       XPC_GetLastErrorString());
                 EICAS1_Data_LoadNextFrame(&local);
             }
         } else {

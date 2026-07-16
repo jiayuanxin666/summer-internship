@@ -169,7 +169,11 @@ void PFD_DrawAltitudeIndicator(SDL_Renderer *renderer, const PFD_Data *data)
         lineRGBA(renderer, x + 7, ty, x + (label ? 36 : 26), ty,
                  220, 220, 220, 255);
         if (label) {
-            snprintf(text, sizeof(text), "%05d", alt);
+            if (alt < 0) {
+                snprintf(text, sizeof(text), "-%04d", abs(alt));
+            } else {
+                snprintf(text, sizeof(text), "%05d", alt);
+            }
             stringRGBA(renderer, x + 45, ty - 4, text, 230, 230, 230, 255);
         }
     }
@@ -183,10 +187,18 @@ void PFD_DrawAltitudeIndicator(SDL_Renderer *renderer, const PFD_Data *data)
                    4, 0, 0, 0, 240);
     roundedRectangleRGBA(renderer, x - 18, center_y - 21, x + 74, center_y + 21,
                          4, 255, 255, 255, 255);
-    snprintf(text, sizeof(text), "%05d", iroundf(current));
+    if (current < 0.0f) {
+        snprintf(text, sizeof(text), "-%04d", abs(iroundf(current)));
+    } else {
+        snprintf(text, sizeof(text), "%05d", iroundf(current));
+    }
     draw_text_center(renderer, x + 28, center_y - 4, text, 255, 255, 255, 255);
 
-    snprintf(text, sizeof(text), "SEL %05d", iroundf(target));
+    if (target < 0.0f) {
+        snprintf(text, sizeof(text), "SEL -%04d", abs(iroundf(target)));
+    } else {
+        snprintf(text, sizeof(text), "SEL %05d", iroundf(target));
+    }
     stringRGBA(renderer, x + 18, y + h - 24, text, 210, 70, 255, 255);
 }
 
@@ -358,12 +370,14 @@ void PFD_DrawHeadingIndicator(SDL_Renderer *renderer, const PFD_Data *data)
     }
 
     const int cx = PFD_LOGIC_WIDTH / 2;
-    const int cy = 670;
-    const int radius = 241;
+    const int cy = 742;
+    const int radius = 185;
     char text[32];
     float heading = normalize_heading(data->heading);
     float target = normalize_heading(data->heading_target);
+    SDL_Rect heading_clip = {0, 576, PFD_LOGIC_WIDTH, PFD_LOGIC_HEIGHT - 576};
 
+    SDL_RenderSetClipRect(renderer, &heading_clip);
     filledCircleRGBA(renderer, cx, cy, radius, 16, 20, 24, 230);
     circleRGBA(renderer, cx, cy, radius, 115, 125, 135, 255);
     circleRGBA(renderer, cx, cy, radius - 34, 60, 70, 80, 255);
@@ -395,7 +409,7 @@ void PFD_DrawHeadingIndicator(SDL_Renderer *renderer, const PFD_Data *data)
         }
     }
 
-    filledTrigonRGBA(renderer, cx, 511, cx - 12, 536, cx + 12, 536,
+    filledTrigonRGBA(renderer, cx, 578, cx - 12, 600, cx + 12, 600,
                      255, 255, 255, 255);
 
     float target_rel = normalize_heading(target - heading);
@@ -410,13 +424,14 @@ void PFD_DrawHeadingIndicator(SDL_Renderer *renderer, const PFD_Data *data)
         lineRGBA(renderer, tx - 10, ty, tx + 10, ty, 210, 70, 255, 255);
         lineRGBA(renderer, tx, ty - 10, tx, ty + 10, 210, 70, 255, 255);
     }
+    SDL_RenderSetClipRect(renderer, NULL);
 
-    roundedBoxRGBA(renderer, cx - 42, 558, cx + 42, 588, 4, 0, 0, 0, 235);
-    roundedRectangleRGBA(renderer, cx - 42, 558, cx + 42, 588, 4, 255, 255, 255, 255);
-    snprintf(text, sizeof(text), "%03d", iroundf(heading));
-    draw_text_center(renderer, cx, 569, text, 255, 255, 255, 255);
-    snprintf(text, sizeof(text), "MAG  SEL %03d", iroundf(target));
-    draw_text_center(renderer, cx, 594, text, 210, 70, 255, 255);
+    roundedBoxRGBA(renderer, cx - 42, 610, cx + 42, 640, 4, 0, 0, 0, 235);
+    roundedRectangleRGBA(renderer, cx - 42, 610, cx + 42, 640, 4, 255, 255, 255, 255);
+    snprintf(text, sizeof(text), "%03d", ((iroundf(heading) % 360) + 360) % 360);
+    draw_text_center(renderer, cx, 621, text, 255, 255, 255, 255);
+    snprintf(text, sizeof(text), "MAG  SEL %03d", ((iroundf(target) % 360) + 360) % 360);
+    draw_text_center(renderer, cx, 646, text, 210, 70, 255, 255);
 }
 
 void PFD_DrawThrustIndicator(SDL_Renderer *renderer, const PFD_Data *data)

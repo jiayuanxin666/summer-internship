@@ -86,8 +86,8 @@ XPCSocket aopenUDP(const char *ip, unsigned short xp_port, unsigned short local_
     return sock;
 }
 
-int getDREFsSized(XPCSocket sock, const char **drefs, const int *capacities,
-                  int count, float **values) {
+int getDREFsSizedCounts(XPCSocket sock, const char **drefs, const int *capacities,
+                        int count, float **values, int *result_counts) {
     unsigned char request[XPC_PACKET_SIZE] = {0};
     unsigned char response[XPC_PACKET_SIZE];
     struct sockaddr_in response_addr;
@@ -116,6 +116,7 @@ int getDREFsSized(XPCSocket sock, const char **drefs, const int *capacities,
         memcpy(request + cursor, drefs[i], len);
         cursor += len;
         memset(values[i], 0, (size_t)capacities[i] * sizeof(float));
+        if (result_counts) result_counts[i] = 0;
     }
     if (sendto(sock.socket_fd, (const char *)request, (int)cursor, 0,
                (const struct sockaddr *)&sock.xplane_addr, sizeof(sock.xplane_addr)) == SOCKET_ERROR) {
@@ -177,9 +178,15 @@ int getDREFsSized(XPCSocket sock, const char **drefs, const int *capacities,
         copy_count = value_count > (unsigned int)capacities[i]
                          ? (size_t)capacities[i] : (size_t)value_count;
         memcpy(values[i], response + cursor, copy_count * sizeof(float));
+        if (result_counts) result_counts[i] = (int)copy_count;
         cursor += value_bytes;
     }
     return 1;
+}
+
+int getDREFsSized(XPCSocket sock, const char **drefs, const int *capacities,
+                  int count, float **values) {
+    return getDREFsSizedCounts(sock, drefs, capacities, count, values, NULL);
 }
 
 int getDREFs(XPCSocket sock, const char **drefs, int count, float values[][8]) {

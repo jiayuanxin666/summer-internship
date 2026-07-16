@@ -385,7 +385,10 @@ static void draw_option_left(FMC_Display *display, int row, const char *label,
                              const char *option, int selected)
 {
     char text[40];
-    if (!option) return;
+    if (!option) {
+        draw_left_pair(display, row, label, NULL);
+        return;
+    }
     SDL_snprintf(text, sizeof(text), "%s%s", option, selected ? " <SEL>" : "");
     draw_left_pair(display, row, label, text);
 }
@@ -394,7 +397,10 @@ static void draw_option_right(FMC_Display *display, int row, const char *label,
                               const char *option, int selected)
 {
     char text[40];
-    if (!option) return;
+    if (!option) {
+        draw_right_pair(display, row, label, NULL);
+        return;
+    }
     SDL_snprintf(text, sizeof(text), "%s%s", option, selected ? " <SEL>" : "");
     draw_right_pair(display, row, label, text);
 }
@@ -402,10 +408,12 @@ static void draw_option_right(FMC_Display *display, int row, const char *label,
 static void draw_procedure(FMC_Display *display, const FMC_State *state, int arrival)
 {
     const FMC_Data *data = &state->data;
-    const FMC_ProcedureCatalog *catalog = FMC_Data_GetProcedureCatalog(data, arrival);
     const char *airport = arrival
-        ? (data->has_destination ? data->destination.ident : "KBFI")
+        ? (state->procedure_airport_is_origin
+               ? (data->has_origin ? data->origin.ident : "KSEA")
+               : (data->has_destination ? data->destination.ident : "KBFI"))
         : (data->has_origin ? data->origin.ident : "KSEA");
+    const FMC_ProcedureCatalog *catalog = FMC_Data_GetProcedureCatalogForAirport(airport);
     char title[48];
     int selected_procedure = arrival ? data->selected_arrival_procedure : data->selected_departure_procedure;
     int selected_runway = arrival ? data->selected_arrival_runway : data->selected_departure_runway;
@@ -420,10 +428,20 @@ static void draw_procedure(FMC_Display *display, const FMC_State *state, int arr
     draw_page_counter(display, 1, 1);
 
     for (int i = 0; i < 3; ++i) {
-        draw_option_left(display, i, i == 0 ? (arrival ? "STARS" : "SIDE") : NULL,
-                         procedures[i], selected_procedure == i);
+        const char *procedure = procedures[i];
+        const char *runway = runways[i];
+        if (selected_runway >= 0 &&
+            !FMC_Data_ProcedureCompatible(catalog, arrival, i, selected_runway)) {
+            procedure = NULL;
+        }
+        if (selected_procedure >= 0 &&
+            !FMC_Data_ProcedureCompatible(catalog, arrival, selected_procedure, i)) {
+            runway = NULL;
+        }
+        draw_option_left(display, i, i == 0 ? (arrival ? "STARS" : "SIDS") : NULL,
+                         procedure, selected_procedure == i);
         draw_option_right(display, i, i == 0 ? (arrival ? "APPR" : "RWYS") : NULL,
-                          runways[i], selected_runway == i);
+                          runway, selected_runway == i);
     }
     if (selected_procedure >= 0 || selected_runway >= 0) {
         draw_option_left(display, 3, "TRANS", transitions[0], selected_transition == 0);

@@ -82,20 +82,27 @@ static size_t write_callback(void *contents, size_t size, size_t count, void *us
 
 static int http_get_with_handle(CURL *curl, const char *url, MAP_HTTP_Response *response)
 {
-    CURLcode result;
+    CURLcode result = CURLE_FAILED_INIT;
     memset(response, 0, sizeof(*response));
     if (!curl) return 0;
-    curl_easy_reset(curl);
-    curl_easy_setopt(curl, CURLOPT_URL, url);
-    curl_easy_setopt(curl, CURLOPT_WRITEFUNCTION, write_callback);
-    curl_easy_setopt(curl, CURLOPT_WRITEDATA, response);
-    curl_easy_setopt(curl, CURLOPT_CONNECTTIMEOUT, 5L);
-    curl_easy_setopt(curl, CURLOPT_TIMEOUT, 15L);
-    curl_easy_setopt(curl, CURLOPT_FOLLOWLOCATION, 1L);
-    curl_easy_setopt(curl, CURLOPT_USERAGENT, "FlightCockpit-MAP/1.0");
-    result = curl_easy_perform(curl);
-    curl_easy_getinfo(curl, CURLINFO_RESPONSE_CODE, &response->http_status);
-    return result == CURLE_OK && response->http_status == 200 && response->size > 0;
+    for (int attempt = 0; attempt < 2; ++attempt) {
+        MAP_HTTP_Free(response);
+        curl_easy_reset(curl);
+        curl_easy_setopt(curl, CURLOPT_URL, url);
+        curl_easy_setopt(curl, CURLOPT_WRITEFUNCTION, write_callback);
+        curl_easy_setopt(curl, CURLOPT_WRITEDATA, response);
+        curl_easy_setopt(curl, CURLOPT_CONNECTTIMEOUT, 5L);
+        curl_easy_setopt(curl, CURLOPT_TIMEOUT, 15L);
+        curl_easy_setopt(curl, CURLOPT_FOLLOWLOCATION, 1L);
+        curl_easy_setopt(curl, CURLOPT_NOSIGNAL, 1L);
+        curl_easy_setopt(curl, CURLOPT_ACCEPT_ENCODING, "");
+        curl_easy_setopt(curl, CURLOPT_USERAGENT, "FlightCockpit-MAP/1.1");
+        result = curl_easy_perform(curl);
+        curl_easy_getinfo(curl, CURLINFO_RESPONSE_CODE, &response->http_status);
+        if (result == CURLE_OK && response->http_status == 200 && response->size > 0) return 1;
+    }
+    MAP_HTTP_Free(response);
+    return 0;
 }
 
 int MAP_HTTP_Get(const char *url, MAP_HTTP_Response *response)
@@ -120,7 +127,7 @@ static const char *json_string(cJSON *object, const char *name)
 
 static int fetch_json(CURL *curl, const char *url, cJSON **root)
 {
-    MAP_HTTP_Response response;
+    MAP_HTTP_Response response = {0};
     if (!http_get_with_handle(curl, url, &response)) return 0;
     *root = cJSON_ParseWithLength((char *)response.bytes, response.size);
     MAP_HTTP_Free(&response);
@@ -168,12 +175,16 @@ int MAP_Data_FetchStaticMap(const MAP_Data *data, const char *api_key, int width
 {
     char url[8192], paths[6000] = "";
     size_t used = 0;
+    if (!response) return 0;
+    memset(response, 0, sizeof(*response));
     if (!api_key || !*api_key) return 0;
     for (int i = 0; i < data->track_count; ++i) {
         int n = snprintf(paths + used, sizeof(paths) - used, "%s%.6f,%.6f", i ? ";" : "", data->track[i].longitude, data->track[i].latitude);
         if (n < 0 || (size_t)n >= sizeof(paths) - used) break;
         used += (size_t)n;
     }
+    if (width < 1) width = 1;
+    if (height < 1) height = 1;
     if (width > 1024) width = 1024;
     if (height > 1024) height = 1024;
     snprintf(url, sizeof(url), "https://restapi.amap.com/v3/staticmap?location=%.6f,%.6f&zoom=%d&size=%d*%d&scale=2%s%s&key=%s",

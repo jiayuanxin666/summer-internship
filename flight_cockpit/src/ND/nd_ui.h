@@ -20,6 +20,7 @@ typedef struct
 
     int window_width;
     int window_height;
+    int map_range_index;
 
     SDL_Rect render_rect;
 } ND_UI;
@@ -27,6 +28,7 @@ typedef struct
 int ND_UI_Init(ND_UI *ui);
 void ND_UI_HandleEvent(ND_UI *ui, SDL_Event *event, int *running);
 void ND_UI_Render(ND_UI *ui, const ND_Data *data);
+int ND_UI_SaveScreenshot(ND_UI *ui, const char *path);
 void ND_UI_Destroy(ND_UI *ui);
 
 #endif

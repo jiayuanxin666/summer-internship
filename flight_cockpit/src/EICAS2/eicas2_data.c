@@ -2,6 +2,7 @@
 #include <SDL2/SDL.h>
 #include <math.h>
 #include <stdio.h>
+#include <stdlib.h>
 #include <string.h>
 
 #ifdef ENABLE_XPLANE
@@ -76,14 +77,20 @@ static void normalize_data(EICAS2_Data *data)
     data->oil_temp_right = clampf_local(finite_or(data->oil_temp_right, 0.0f), 0.0f, 180.0f);
     data->oil_qty_left = clampf_local(finite_or(data->oil_qty_left, 0.0f), 0.0f, 25.0f);
     data->oil_qty_right = clampf_local(finite_or(data->oil_qty_right, 0.0f), 0.0f, 25.0f);
-    data->vib_left = clampf_local(finite_or(data->vib_left, 0.0f), 0.0f, 10.0f);
-    data->vib_right = clampf_local(finite_or(data->vib_right, 0.0f), 0.0f, 10.0f);
-    data->alert_left = (data->oil_press_left <= 15.0f ? EICAS2_ALERT_OIL_PRESS_LOW : 0u) |
-                       (data->oil_temp_left >= 100.0f ? EICAS2_ALERT_OIL_TEMP_HIGH : 0u) |
-                       (data->vib_left >= 8.0f ? EICAS2_ALERT_VIB_HIGH : 0u);
-    data->alert_right = (data->oil_press_right <= 15.0f ? EICAS2_ALERT_OIL_PRESS_LOW : 0u) |
-                        (data->oil_temp_right >= 100.0f ? EICAS2_ALERT_OIL_TEMP_HIGH : 0u) |
-                        (data->vib_right >= 8.0f ? EICAS2_ALERT_VIB_HIGH : 0u);
+    data->vib_left = clampf_local(finite_or(data->vib_left, 0.0f), 0.0f, 5.0f);
+    data->vib_right = clampf_local(finite_or(data->vib_right, 0.0f), 0.0f, 5.0f);
+    data->engine_running_left = data->engine_running_left != 0;
+    data->engine_running_right = data->engine_running_right != 0;
+    data->alert_left = data->engine_running_left
+        ? (data->oil_press_left <= 15.0f ? EICAS2_ALERT_OIL_PRESS_LOW : 0u) |
+          (data->oil_temp_left >= 140.0f ? EICAS2_ALERT_OIL_TEMP_HIGH : 0u) |
+          (data->vib_left >= 4.0f ? EICAS2_ALERT_VIB_HIGH : 0u)
+        : 0u;
+    data->alert_right = data->engine_running_right
+        ? (data->oil_press_right <= 15.0f ? EICAS2_ALERT_OIL_PRESS_LOW : 0u) |
+          (data->oil_temp_right >= 140.0f ? EICAS2_ALERT_OIL_TEMP_HIGH : 0u) |
+          (data->vib_right >= 4.0f ? EICAS2_ALERT_VIB_HIGH : 0u)
+        : 0u;
     data->valid = 1;
 }
 
@@ -108,6 +115,8 @@ static void fill_internal_frame(EICAS2_Data *data)
     data->oil_qty_right = 12.0f + sinf(t * 0.17f + 0.2f) * 1.0f;
     data->vib_left = 1.2f + sinf(t * 0.6f) * 0.5f;
     data->vib_right = 1.3f + sinf(t * 0.58f) * 0.5f;
+    data->engine_running_left = 1;
+    data->engine_running_right = 1;
     data->data_source = EICAS2_DATA_SOURCE_SIM;
     normalize_data(data);
     ++g_frame;
@@ -132,6 +141,8 @@ void EICAS2_Data_Init(EICAS2_Data *data)
     data->oil_qty_right = 12.0f;
     data->vib_left = 1.0f;
     data->vib_right = 1.0f;
+    data->engine_running_left = 1;
+    data->engine_running_right = 1;
     data->data_source = EICAS2_DATA_SOURCE_SIM;
     normalize_data(data);
 }
@@ -180,6 +191,8 @@ int EICAS2_Data_LoadNextFrame(EICAS2_Data *data)
         data->oil_qty_right = values[9];
         data->vib_left = values[10];
         data->vib_right = values[11];
+        data->engine_running_left = values[0] > 5.0f;
+        data->engine_running_right = values[1] > 5.0f;
         data->data_source = EICAS2_DATA_SOURCE_FILE;
         normalize_data(data);
         g_parse_failures = 0;
@@ -210,6 +223,8 @@ void EICAS2_Data_Smooth(EICAS2_Data *display, const EICAS2_Data *target, float a
     display->oil_qty_right = smooth_linear(display->oil_qty_right, target->oil_qty_right, alpha);
     display->vib_left = smooth_linear(display->vib_left, target->vib_left, alpha);
     display->vib_right = smooth_linear(display->vib_right, target->vib_right, alpha);
+    display->engine_running_left = target->engine_running_left;
+    display->engine_running_right = target->engine_running_right;
     display->valid = target->valid;
     display->data_source = target->data_source;
     normalize_data(display);
@@ -228,9 +243,10 @@ void EICAS2_Data_Close(void)
 
 #ifdef ENABLE_XPLANE
 
-#define EICAS2_XPLANE_DREF_COUNT 6
+#define EICAS2_XPLANE_DREF_COUNT 7
+#define EICAS2_XPLANE_DEFAULT_PORT 49009
 #define EICAS2_KGSEC_TO_KLBH 7.936632f
-#define EICAS2_OIL_QTY_FACTOR 18.889f
+#define EICAS2_DEFAULT_OIL_QTY_FULL 18.889f
 
 static XPCSocket g_xpc_socket;
 static int g_xpc_open = 0;
@@ -240,14 +256,55 @@ static int fetch_probe(void)
     const char *probe[] = {
         "sim/flightmodel/engine/ENGN_N2_"
     };
-    float values[1][8];
+    float value[8] = {0};
+    float *values[] = {value};
+    const int capacities[] = {8};
+    int counts[] = {0};
 
-    return getDREFs(g_xpc_socket, probe, 1, values);
+    return getDREFsSizedCounts(g_xpc_socket, probe, capacities, 1, values, counts) &&
+           counts[0] >= 2;
+}
+
+static const char *xplane_host(void)
+{
+    const char *host = getenv("XPLANE_HOST");
+    return host && host[0] ? host : "127.0.0.1";
+}
+
+static unsigned short xplane_port(void)
+{
+    const char *text = getenv("XPLANE_PORT");
+    char *end = NULL;
+    unsigned long value;
+    if (!text || !text[0]) return EICAS2_XPLANE_DEFAULT_PORT;
+    value = strtoul(text, &end, 10);
+    return end && *end == '\0' && value > 0 && value <= 65535
+        ? (unsigned short)value : EICAS2_XPLANE_DEFAULT_PORT;
+}
+
+static float oil_qty_full(void)
+{
+    const char *text = getenv("EICAS2_OIL_QTY_FULL");
+    char *end = NULL;
+    float value;
+    if (!text || !text[0]) return EICAS2_DEFAULT_OIL_QTY_FULL;
+    value = strtof(text, &end);
+    return end && *end == '\0' && isfinite(value) && value > 0.0f && value <= 25.0f
+        ? value : EICAS2_DEFAULT_OIL_QTY_FULL;
+}
+
+static float oil_qty_ratio(float value)
+{
+    const char *mode = getenv("EICAS2_OIL_QTY_MODE");
+    if (mode && strcmp(mode, "percent") == 0) return value / 100.0f;
+    if (mode && strcmp(mode, "ratio") == 0) return value;
+    /* Aircraft expose ENGN_oil_quan as either a 0..1 ratio or 0..100 percent. */
+    return value > 1.5f ? value / 100.0f : value;
 }
 
 int EICAS2_XPlane_Open(void)
 {
-    g_xpc_socket = openUDP("127.0.0.1");
+    g_xpc_socket = aopenUDP(xplane_host(), xplane_port(), 0);
     g_xpc_open = XPCSocket_IsOpen(g_xpc_socket);
 
     if (!g_xpc_open) {
@@ -271,17 +328,28 @@ int EICAS2_XPlane_FetchData(EICAS2_Data *data)
         "sim/cockpit2/engine/indicators/oil_pressure_psi",
         "sim/cockpit2/engine/indicators/oil_temperature_deg_C",
         "sim/flightmodel/engine/ENGN_oil_quan",
-        "sim/cockpit2/engine/indicators/vibration_ratio"
+        "sim/cockpit2/engine/indicators/vibration_ratio",
+        "sim/flightmodel/engine/ENGN_running"
     };
-    float values[EICAS2_XPLANE_DREF_COUNT][8];
+    float values[EICAS2_XPLANE_DREF_COUNT][8] = {{0}};
+    float *outputs[EICAS2_XPLANE_DREF_COUNT];
+    const int capacities[EICAS2_XPLANE_DREF_COUNT] = {8, 8, 8, 8, 8, 8, 8};
+    int counts[EICAS2_XPLANE_DREF_COUNT] = {0};
+    float full_oil_qty;
 
     if (!data || !g_xpc_open) {
         return 0;
     }
 
-    if (!getDREFs(g_xpc_socket, drefs, EICAS2_XPLANE_DREF_COUNT, values)) {
+    for (int i = 0; i < EICAS2_XPLANE_DREF_COUNT; ++i) outputs[i] = values[i];
+    if (!getDREFsSizedCounts(g_xpc_socket, drefs, capacities,
+                             EICAS2_XPLANE_DREF_COUNT, outputs, counts)) {
         return 0;
     }
+    for (int i = 0; i < EICAS2_XPLANE_DREF_COUNT; ++i) {
+        if (counts[i] < 2) return 0;
+    }
+    full_oil_qty = oil_qty_full();
 
     data->n2_left = values[0][0];
     data->n2_right = values[0][1];
@@ -291,11 +359,12 @@ int EICAS2_XPlane_FetchData(EICAS2_Data *data)
     data->oil_press_right = values[2][1];
     data->oil_temp_left = values[3][0];
     data->oil_temp_right = values[3][1];
-    /* ENGN_oil_quan is seen as either 0..1 or 0..100 across aircraft. */
-    data->oil_qty_left = (values[4][0] > 1.5f ? values[4][0] / 100.0f : values[4][0]) * EICAS2_OIL_QTY_FACTOR;
-    data->oil_qty_right = (values[4][1] > 1.5f ? values[4][1] / 100.0f : values[4][1]) * EICAS2_OIL_QTY_FACTOR;
+    data->oil_qty_left = oil_qty_ratio(values[4][0]) * full_oil_qty;
+    data->oil_qty_right = oil_qty_ratio(values[4][1]) * full_oil_qty;
     data->vib_left = values[5][0] * 10.0f;
     data->vib_right = values[5][1] * 10.0f;
+    data->engine_running_left = values[6][0] >= 0.5f;
+    data->engine_running_right = values[6][1] >= 0.5f;
     data->data_source = EICAS2_DATA_SOURCE_XPLANE;
     normalize_data(data);
     return 1;

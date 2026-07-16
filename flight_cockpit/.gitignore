@@ -1,3 +1,19 @@
 assets/map.local.cfg
-build-map/
-build-cmake/
+
+# CMake and compiler output
+/build/
+/build-*/
+*.exe
+*.obj
+*.o
+*.pdb
+
+# Local diagnostics and captures
+/*.bmp
+/screenshots/
+/backup_*/
+
+# IDE and operating-system files
+/.vscode/
+.DS_Store
+Thumbs.db

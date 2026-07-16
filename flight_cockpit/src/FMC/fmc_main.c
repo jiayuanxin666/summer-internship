@@ -142,7 +142,7 @@ int main(int argc, char *argv[])
         }
 
         FMC_Display_Render(&display, &state);
-        if (route_ipc) {
+        if (route_ipc && state.data.synchronized && FMC_Data_IsRouteReady(&state.data)) {
             RouteIPCData shared;
             memset(&shared, 0, sizeof(shared));
             if (state.data.has_origin && shared.point_count < ROUTE_IPC_CAPACITY) {

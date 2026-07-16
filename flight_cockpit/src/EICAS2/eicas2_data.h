@@ -23,6 +23,8 @@ typedef struct
     float oil_qty_right;
     float vib_left;
     float vib_right;
+    int engine_running_left;
+    int engine_running_right;
     int valid;
     int data_source;
     unsigned int alert_left;

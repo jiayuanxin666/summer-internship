@@ -71,6 +71,7 @@ static void delete_route_field(FMC_State *state, FMC_Key key)
     }
     FMC_Data_ClearScratchpad(data);
     FMC_Data_MarkModified(data);
+    FMC_Data_RefreshRouteExecState(data);
 }
 
 static void handle_route_lsk(FMC_State *state, FMC_Key key)
@@ -113,6 +114,7 @@ static void handle_route_lsk(FMC_State *state, FMC_Key key)
             --data->route_count;
             FMC_Data_ClearScratchpad(data);
             FMC_Data_MarkModified(data);
+            FMC_Data_RefreshRouteExecState(data);
         } else if (scratchpad_copy(data, input, sizeof(input))) {
             FMC_Data_AddRouteFix(data, input);
         }
@@ -190,25 +192,73 @@ static void handle_vnav_lsk(FMC_State *state, FMC_Key key)
 static void select_procedure(FMC_State *state, FMC_Key key, int arrival)
 {
     FMC_Data *data = &state->data;
+    const char *airport = arrival
+        ? (state->procedure_airport_is_origin
+               ? (data->has_origin ? data->origin.ident : "KSEA")
+               : (data->has_destination ? data->destination.ident : "KBFI"))
+        : (data->has_origin ? data->origin.ident : "KSEA");
+    const FMC_ProcedureCatalog *catalog = FMC_Data_GetProcedureCatalogForAirport(airport);
+    const char *const *procedures = arrival ? catalog->arrival_procedures
+                                            : catalog->departure_procedures;
+    const char *const *runways = arrival ? catalog->arrival_runways
+                                         : catalog->departure_runways;
+    const char *const *transitions = arrival ? catalog->arrival_transitions
+                                              : catalog->departure_transitions;
     int index;
     if (key >= FMC_KEY_L1 && key <= FMC_KEY_L3) {
         index = key - FMC_KEY_L1;
+        if (!procedures[index]) {
+            FMC_Data_SetMessage(data, "NOT AVAILABLE");
+            return;
+        }
         if (arrival) {
             data->selected_arrival_procedure = index;
+            if (data->selected_arrival_runway >= 0 &&
+                !FMC_Data_ProcedureCompatible(catalog, 1, index,
+                                              data->selected_arrival_runway)) {
+                data->selected_arrival_runway = -1;
+            }
+            data->selected_arrival_transition = -1;
         } else {
             data->selected_departure_procedure = index;
+            if (data->selected_departure_runway >= 0 &&
+                !FMC_Data_ProcedureCompatible(catalog, 0, index,
+                                              data->selected_departure_runway)) {
+                data->selected_departure_runway = -1;
+            }
+            data->selected_departure_transition = -1;
         }
         FMC_Data_MarkModified(data);
     } else if (key >= FMC_KEY_R1 && key <= FMC_KEY_R3) {
         index = key - FMC_KEY_R1;
+        if (!runways[index]) {
+            FMC_Data_SetMessage(data, "NOT AVAILABLE");
+            return;
+        }
         if (arrival) {
             data->selected_arrival_runway = index;
+            if (data->selected_arrival_procedure >= 0 &&
+                !FMC_Data_ProcedureCompatible(catalog, 1,
+                                              data->selected_arrival_procedure, index)) {
+                data->selected_arrival_procedure = -1;
+            }
+            data->selected_arrival_transition = -1;
         } else {
             data->selected_departure_runway = index;
+            if (data->selected_departure_procedure >= 0 &&
+                !FMC_Data_ProcedureCompatible(catalog, 0,
+                                              data->selected_departure_procedure, index)) {
+                data->selected_departure_procedure = -1;
+            }
+            data->selected_departure_transition = -1;
         }
         FMC_Data_MarkModified(data);
     } else if (key == FMC_KEY_L4 || key == FMC_KEY_R4) {
         index = key == FMC_KEY_L4 ? 0 : 1;
+        if (!transitions[index]) {
+            FMC_Data_SetMessage(data, "NOT AVAILABLE");
+            return;
+        }
         if (arrival) {
             data->selected_arrival_transition = index;
         } else {
@@ -216,23 +266,37 @@ static void select_procedure(FMC_State *state, FMC_Key key, int arrival)
         }
         FMC_Data_MarkModified(data);
     }
+    FMC_Data_SetMessage(data, "");
 }
 
 static void execute_pending(FMC_State *state)
 {
     FMC_Data *data = &state->data;
+    if (state->page == FMC_PAGE_ROUTE && !FMC_Data_IsRouteReady(data)) {
+        data->exec_pending = 0;
+        FMC_Data_SetMessage(data, "ROUTE INCOMPLETE");
+        return;
+    }
     if (!data->exec_pending) {
         FMC_Data_SetMessage(data, "NO MODIFICATION");
         return;
     }
 
-    if (state->page == FMC_PAGE_ROUTE && FMC_Data_IsRouteReady(data)) {
-        FMC_Connect_SyncRoute(&state->connect,
-                              data->origin.ident,
-                              data->destination.ident,
-                              data->flight_number);
+    if (state->page == FMC_PAGE_ROUTE) {
+        if (state->connect.available &&
+            !FMC_Connect_SyncRoute(&state->connect,
+                                   data->origin.ident,
+                                   data->destination.ident,
+                                   data->flight_number)) {
+            FMC_Data_SetMessage(data, "XPLANE SYNC FAILED");
+            return;
+        }
     } else {
-        FMC_Connect_SendKey(&state->connect, FMC_KEY_EXEC);
+        if (state->connect.available &&
+            !FMC_Connect_SendKey(&state->connect, FMC_KEY_EXEC)) {
+            FMC_Data_SetMessage(data, "XPLANE SYNC FAILED");
+            return;
+        }
     }
     FMC_Data_MarkSynchronized(data);
 }
@@ -258,8 +322,16 @@ static void handle_line_select(FMC_State *state, FMC_Key key)
         handle_vnav_lsk(state, key);
         break;
     case FMC_PAGE_DEP_ARR_INDEX:
-        if (key == FMC_KEY_L1) set_page(state, FMC_PAGE_DEPARTURE);
-        else if (key == FMC_KEY_R1) set_page(state, FMC_PAGE_ARRIVAL);
+        if (key == FMC_KEY_L1) {
+            state->procedure_airport_is_origin = 1;
+            set_page(state, FMC_PAGE_DEPARTURE);
+        } else if (key == FMC_KEY_R1 || key == FMC_KEY_R2) {
+            state->procedure_airport_is_origin = key == FMC_KEY_R1;
+            state->data.selected_arrival_procedure = -1;
+            state->data.selected_arrival_runway = -1;
+            state->data.selected_arrival_transition = -1;
+            set_page(state, FMC_PAGE_ARRIVAL);
+        }
         break;
     case FMC_PAGE_DEPARTURE:
         select_procedure(state, key, 0);
@@ -307,7 +379,6 @@ void FMC_Event_HandleKey(FMC_State *state, FMC_Key key)
     input = FMC_Key_InputText(key);
     if (input) {
         FMC_Data_AppendScratchpad(&state->data, input);
-        FMC_Connect_SendKey(&state->connect, key);
         return;
     }
 
@@ -426,16 +497,25 @@ int FMC_Event_RunSelfTest(void)
     if (!FMC_Event_Init(&state, NULL)) {
         return 0;
     }
+    ok = fmc_button_count == FMC_KEY_COUNT - 1;
+    for (int key = FMC_KEY_L1; key < FMC_KEY_COUNT; ++key) {
+        ok = ok && FMC_Key_GetButton((FMC_Key)key) != NULL;
+    }
+    ok = ok && strcmp(FMC_Key_XPlaneCommand(FMC_KEY_RTE), "sim/FMS/fpln") == 0;
+    ok = ok && strcmp(FMC_Key_XPlaneCommand(FMC_KEY_EXEC), "sim/FMS/exec") == 0;
     FMC_Event_HandleKey(&state, FMC_KEY_RTE);
     FMC_Data_AppendScratchpad(&state.data, "KSEA");
     FMC_Event_HandleKey(&state, FMC_KEY_L1);
+    ok = state.data.has_origin && !state.data.exec_pending;
+    FMC_Event_HandleKey(&state, FMC_KEY_EXEC);
+    ok = ok && strcmp(state.data.message, "ROUTE INCOMPLETE") == 0;
     FMC_Data_AppendScratchpad(&state.data, "KBFI");
     FMC_Event_HandleKey(&state, FMC_KEY_R1);
     FMC_Data_AppendScratchpad(&state.data, "AAA001");
     FMC_Event_HandleKey(&state, FMC_KEY_R2);
     FMC_Data_AppendScratchpad(&state.data, "FREDY");
     FMC_Event_HandleKey(&state, FMC_KEY_R5);
-    ok = state.page == FMC_PAGE_ROUTE &&
+    ok = ok && state.page == FMC_PAGE_ROUTE &&
          state.data.has_origin && state.data.has_destination &&
          strcmp(state.data.flight_number, "AAA001") == 0 &&
          state.data.route_count == 1 && state.data.exec_pending;
@@ -446,6 +526,20 @@ int FMC_Event_RunSelfTest(void)
     FMC_Event_HandleKey(&state, FMC_KEY_L1);
     ok = ok && strcmp(state.data.climb_speed_low, "310") == 0 &&
          strcmp(state.data.climb_speed_mach, ".78") == 0;
+    FMC_Event_HandleKey(&state, FMC_KEY_DEP_ARR);
+    FMC_Event_HandleKey(&state, FMC_KEY_L1);
+    FMC_Event_HandleKey(&state, FMC_KEY_L1);
+    ok = ok && state.page == FMC_PAGE_DEPARTURE &&
+         state.data.selected_departure_procedure == 0;
+    FMC_Event_HandleKey(&state, FMC_KEY_R2);
+    ok = ok && state.data.selected_departure_runway == 1 &&
+         state.data.selected_departure_procedure == -1;
+    FMC_Event_HandleKey(&state, FMC_KEY_DEP_ARR);
+    FMC_Event_HandleKey(&state, FMC_KEY_R1);
+    ok = ok && state.page == FMC_PAGE_ARRIVAL && state.procedure_airport_is_origin;
+    FMC_Event_HandleKey(&state, FMC_KEY_DEP_ARR);
+    FMC_Event_HandleKey(&state, FMC_KEY_R2);
+    ok = ok && state.page == FMC_PAGE_ARRIVAL && !state.procedure_airport_is_origin;
     FMC_Event_Destroy(&state);
     return ok;
 }

@@ -24,6 +24,7 @@ typedef struct
 {
     FMC_Page page;
     int route_page;
+    int procedure_airport_is_origin;
     const FMC_Button *hovered_button;
     FMC_Data data;
     FMC_Connect connect;
